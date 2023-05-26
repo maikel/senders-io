@@ -15,6 +15,7 @@
  */
 #pragma once
 
+#include "../concepts.hpp"
 #include "./sequence_concepts.hpp"
 
 #include <exec/trampoline_scheduler.hpp>

@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-#include "sio/iterate.hpp"
+#include "sio/sequence/iterate.hpp"
 
-#include "sio/first.hpp"
+#include "sio/sequence/first.hpp"
 
 #include <catch2/catch.hpp>
 

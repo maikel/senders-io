@@ -13,9 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include "sio/first.hpp"
+#include "sio/sequence/first.hpp"
 
-#include "sio/empty_sequence.hpp"
+#include "sio/sequence/empty_sequence.hpp"
 
 #include <catch2/catch.hpp>
 

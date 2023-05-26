@@ -15,7 +15,7 @@
  */
 #pragma once
 
-#include <exec/sequence_senders.hpp>
+#include "./sequence_concepts.hpp"
 
 namespace sio {
   namespace empty_sequence_ {

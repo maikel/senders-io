@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-#include "sio/ignore_all.hpp"
+#include "sio/sequence/ignore_all.hpp"
 
-#include "sio/iterate.hpp"
-#include "sio/then_each.hpp"
+#include "sio/sequence/iterate.hpp"
+#include "sio/sequence/then_each.hpp"
 
 #include <catch2/catch.hpp>
 
