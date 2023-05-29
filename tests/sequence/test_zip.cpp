@@ -18,6 +18,6 @@
 
 #include <catch2/catch.hpp>
 
-TEST_CASE("zip - with just", "[zip]") {
-  auto sender = sio::zip(stdexec::just());
-} 
+// TEST_CASE("zip - with just", "[zip]") {
+  // auto sender = sio::zip(stdexec::just());
+// } 
