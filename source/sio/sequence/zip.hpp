@@ -52,7 +52,7 @@ namespace sio {
       [[no_unique_address]] ErrorsVariant errors_;
       std::mutex stop_mutex_;
       mutexes_t mutexes_;
-      queues_t queues_;
+      queues_t item_queues_;
       std::atomic<int> n_ready_next_items_{};
       in_place_stop_source stop_source_{};
       std::optional<on_stop> stop_callback_{};
@@ -80,7 +80,7 @@ namespace sio {
 
       void notify_op_completion() noexcept {
         std::scoped_lock lock(stop_mutex_);
-        n_pending_ops -= 1;
+        n_pending_ops_ -= 1;
         if (n_pending_ops_ == 0 && stop_source_.stop_requested()) {
           auto token = stdexec::get_stop_token(stdexec::get_env(receiver_));
           if (token.stop_requested()) {
@@ -92,7 +92,7 @@ namespace sio {
                   stdexec::set_error(static_cast<Receiver&&>(receiver_), (Error&&) error);
                 }
               },
-              static_cast<ErrorsVariant&&>(__error_));
+              static_cast<ErrorsVariant&&>(errors_));
           } else {
             stdexec::set_value(static_cast<Receiver&&>(receiver_));
           }
