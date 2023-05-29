@@ -8,7 +8,7 @@ on:
 
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
-  BUILD_TYPE: Release
+  BUILD_TYPE: Release, Debug
 
 jobs:
   build:
@@ -18,6 +18,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - uses: actions/checkout@v3
+      with: villevoutilainen/wg21_p2300_std_execution
+      ref: member-only-customization-points
+      path: stdexec
+
+    - name: Configure stdexec
+      run: cmake -B ${{github.workspace}}/stdexec-build -S ${{github.workspace}}/stdexec
+
+    - name: Install stdexec
+      run: cmake --install ${{github.workspace}}/stdexec-build
+
     - uses: actions/checkout@v3
 
     - name: Configure CMake
