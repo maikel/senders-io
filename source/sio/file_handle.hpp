@@ -30,118 +30,111 @@
 namespace exec { namespace __io_uring {
   using namespace stdexec;
 
-  template <class _ReceiverId>
-  struct __close_operation {
-    using _Receiver = stdexec::__t<_ReceiverId>;
+  template <class Receiver>
+  struct close_operation_base : __stoppable_op_base<Receiver> {
+    int fd_;
 
-    struct __impl : __stoppable_op_base<_Receiver> {
-      int __fd_;
+    close_operation_base(int fd, io_uring_context& context, Receiver receiver)
+      : __stoppable_op_base<Receiver>{context, static_cast<Receiver&&>(receiver)}
+      , fd_{fd} {
+    }
 
-      __impl(int __fd, io_uring_context& __context, _Receiver&& __receiver)
-        : __stoppable_op_base<_Receiver>{__context, static_cast<_Receiver&&>(__receiver)}
-        , __fd_{__fd} {
+    static constexpr std::false_type ready() noexcept {
+      return {};
+    }
+
+    void submit(::io_uring_sqe& sqe) noexcept {
+      ::io_uring_sqe sqe_{};
+      sqe_.opcode = IORING_OP_CLOSE;
+      sqe_.fd = fd_;
+      sqe = sqe_;
+    }
+
+    void complete(const ::io_uring_cqe& cqe) noexcept {
+      if (cqe.res == 0) {
+        stdexec::set_value(static_cast<Receiver&&>(this->__receiver_), cqe.res);
+      } else {
+        STDEXEC_ASSERT(cqe.res < 0);
+        stdexec::set_error(
+          static_cast<Receiver&&>(this->__receiver_),
+          std::error_code(-cqe.res, std::system_category()));
       }
-
-      static constexpr std::false_type ready() noexcept {
-        return {};
-      }
-
-      void submit(::io_uring_sqe& __sqe) noexcept {
-        ::io_uring_sqe __sqe_{};
-        __sqe_.opcode = IORING_OP_CLOSE;
-        __sqe_.fd = __fd_;
-        __sqe = __sqe_;
-      }
-
-      void complete(const ::io_uring_cqe& __cqe) noexcept {
-        if (__cqe.res == 0) {
-          stdexec::set_value(static_cast<_Receiver&&>(this->__receiver_), __cqe.res);
-        } else {
-          STDEXEC_ASSERT(__cqe.res < 0);
-          stdexec::set_error(
-            static_cast<_Receiver&&>(this->__receiver_),
-            std::make_exception_ptr(std::system_error(-__cqe.res, std::system_category())));
-        }
-      }
-    };
-
-    using __t = __stoppable_task_facade_t<__impl>;
+    }
   };
 
-  struct __close_sender {
+  template <class Receiver>
+  using close_operation = __stoppable_task_facade_t<close_operation_base<Receiver>>;
+
+  struct close_sender {
     using completion_signatures = stdexec::completion_signatures<
       stdexec::set_value_t(),
-      stdexec::set_error_t(std::exception_ptr),
+      stdexec::set_error_t(std::error_code),
       stdexec::set_stopped_t()>;
 
-    template <class _Receiver>
-    using __operation_t = __t<__close_operation<__id<__decay_t<_Receiver>>>>;
+    io_uring_context* context_;
+    int fd_;
 
-    io_uring_context* __context_;
-    int __fd_;
-
-    template <__decays_to<__close_sender> _Self, class _Rcvr>
-    friend auto tag_invoke(connect_t, _Self&& __self, _Rcvr&& __rcvr) noexcept {
-      return __operation_t<_Rcvr>{
-        std::in_place, __self.__fd_, *__self.__context_, static_cast<_Rcvr&&>(__rcvr)};
+    template <class Receiver>
+    static close_operation<Receiver> connect(close_sender self, connect_t, Receiver rcvr) noexcept {
+      return close_operation<Receiver>{
+        std::in_place, self.fd_, *self.context_, static_cast<Receiver&&>(rcvr)};
     }
   };
 
   struct native_fd_handle {
-    io_uring_context* __context_;
-    int __fd_;
+    io_uring_context* context_;
+    int fd_;
 
-    native_fd_handle(io_uring_context& __context, int __fd) noexcept
-      : __context_{&__context}
-      , __fd_{__fd} {
+    native_fd_handle(io_uring_context& context, int fd) noexcept
+      : context_{&context}
+      , fd_{fd} {
     }
 
-    friend __close_sender
-      tag_invoke(exec::async_resource::close_t, native_fd_handle __handle) noexcept {
-      return {__handle.__context_, __handle.__fd_};
+    close_sender close(exec::async_resource::close_t) const noexcept {
+      return {handle.context_, handle.fd_};
     }
   };
 
-  struct __open_data {
-    std::filesystem::path __path_;
-    int __dirfd_{0};
-    int __flags_{0};
-    ::mode_t __mode_{0};
+  struct open_data {
+    std::filesystem::path path_;
+    int dirfd_{0};
+    int flags_{0};
+    ::mode_t mode_{0};
   };
 
   template <class _RcvrId>
   struct __open_operation {
-    using _Receiver = stdexec::__t<_RcvrId>;
+    using Receiver = stdexec::__t<_RcvrId>;
 
-    struct __impl : __stoppable_op_base<_Receiver> {
-      __open_data __data_;
+    struct __impl : __stoppable_op_base<Receiver> {
+      open_data data_;
 
-      __impl(__open_data __data, io_uring_context& __context, _Receiver&& __receiver)
-        : __stoppable_op_base<_Receiver>{__context, static_cast<_Receiver&&>(__receiver)}
-        , __data_{static_cast<__open_data&&>(__data)} {
+      __impl(open_data data, io_uring_context& context, Receiver&& receiver)
+        : __stoppable_op_base<Receiver>{context, static_cast<Receiver&&>(receiver)}
+        , data_{static_cast<open_data&&>(data)} {
       }
 
       static constexpr std::false_type ready() noexcept {
         return {};
       }
 
-      void submit(::io_uring_sqe& __sqe) noexcept {
-        ::io_uring_sqe __sqe_{};
-        __sqe_.opcode = IORING_OP_OPENAT;
-        __sqe_.addr = bit_cast<__u64>(__data.__path_.c_str());
-        __sqe_.open_flags = O_PATH;
-        __sqe = __sqe_;
+      void submit(::io_uring_sqe& sqe) noexcept {
+        ::io_uring_sqe sqe_{};
+        sqe_.opcode = IORING_OP_OPENAT;
+        sqe_.addr = bit_cast<__u64>(data_.path_.c_str());
+        sqe_.open_flags = O_PATH;
+        sqe = sqe_;
       }
 
-      void complete(const ::io_uring_cqe& __cqe) noexcept {
-        if (__cqe.res >= 0) {
+      void complete(const ::io_uring_cqe& cqe) noexcept {
+        if (cqe.res >= 0) {
           stdexec::set_value(
-            static_cast<_Receiver&&>(this->__receiver_), native_fd_handle{&__context_, __cqe.res});
+            static_cast<Receiver&&>(this->__receiver_), native_fd_handle{&context_, cqe.res});
         } else {
-          STDEXEC_ASSERT(__cqe.res < 0);
+          STDEXEC_ASSERT(cqe.res < 0);
           stdexec::set_error(
-            static_cast<_Receiver&&>(this->__receiver_),
-            std::make_exception_ptr(std::system_error(-__cqe.res, std::system_category())));
+            static_cast<Receiver&&>(this->__receiver_),
+            std::make_exception_ptr(std::system_error(-cqe.res, std::system_category())));
         }
       }
     };
@@ -159,62 +152,61 @@ namespace exec { namespace __io_uring {
       stdexec::set_error_t(std::exception_ptr),
       stdexec::set_stopped_t()>;
 
-    template <class _Receiver>
+    template <class Receiver>
     using __operation_t =
-      stdexec::__t<__open_operation<stdexec::__id<stdexec::__decay_t<_Receiver>>>>;
+      stdexec::__t<__open_operation<stdexec::__id<stdexec::__decay_t<Receiver>>>>;
 
-    io_uring_context* __context_;
-    __open_data __data_;
+    io_uring_context* context_;
+    open_data data_;
 
-    explicit __open_sender(io_uring_context& __context, __open_data __data) noexcept
-      : __context_{&__context}
-      , __data_{static_cast<__open_data&&>(__data)} {
+    explicit __open_sender(io_uring_context& context, open_data data) noexcept
+      : context_{&context}
+      , data_{static_cast<open_data&&>(data)} {
     }
 
     template <__decays_to<__open_sender> _Self, class _Rcvr>
     friend auto tag_invoke(connect_t, _Self&& __sender, _Rcvr&& __rcvr) noexcept {
       return __operation_t<_Rcvr>{
         std::in_place,
-        static_cast<_Self&&>(__sender).__data_,
-        *__sender.__context_,
+        static_cast<_Self&&>(__sender).data_,
+        *__sender.context_,
         static_cast<_Rcvr&&>(__rcvr)};
     }
   };
 
   template <class _RcvrId>
   struct __read_operation {
-    using _Receiver = stdexec::__t<_RcvrId>;
+    using Receiver = stdexec::__t<_RcvrId>;
 
-    struct __impl : __stoppable_op_base<_Receiver> {
+    struct __impl : __stoppable_op_base<Receiver> {
       std::span<std::span<std::byte>> __buffers_;
-      int __fd_;
+      int fd_;
 
-      __impl(std::span<::iovec> __data, io_uring_context& __context, _Receiver&& __receiver)
-        : __stoppable_op_base<_Receiver>{__context, static_cast<_Receiver&&>(__receiver)}
-        , __buffers_{__data} {
+      __impl(std::span<::iovec> data, io_uring_context& context, Receiver&& receiver)
+        : __stoppable_op_base<Receiver>{context, static_cast<Receiver&&>(receiver)}
+        , __buffers_{data} {
       }
 
       static constexpr std::false_type ready() noexcept {
         return {};
       }
 
-      void submit(::io_uring_sqe& __sqe) noexcept {
-        ::io_uring_sqe __sqe_{};
-        __sqe_.opcode = IORING_OP_READV;
-        __sqe_.fd = __fd_;
-        __sqe_.addr = bit_cast<__u64>(__buffers_.data());
-        __sqe_.len = __buffers_.size();
+      void submit(::io_uring_sqe& sqe) noexcept {
+        ::io_uring_sqe sqe_{};
+        sqe_.opcode = IORING_OP_READV;
+        sqe_.fd = fd_;
+        sqe_.addr = bit_cast<__u64>(__buffers_.data());
+        sqe_.len = __buffers_.size();
       }
 
-      void complete(const ::io_uring_cqe& __cqe) noexcept {
-        if (__cqe.res >= 0) {
-          stdexec::set_value(
-            static_cast<_Receiver&&>(this->__receiver_), );
+      void complete(const ::io_uring_cqe& cqe) noexcept {
+        if (cqe.res >= 0) {
+          stdexec::set_value(static_cast<Receiver&&>(this->__receiver_), );
         } else {
-          STDEXEC_ASSERT(__cqe.res < 0);
+          STDEXEC_ASSERT(cqe.res < 0);
           stdexec::set_error(
-            static_cast<_Receiver&&>(this->__receiver_),
-            std::make_exception_ptr(std::system_error(-__cqe.res, std::system_category())));
+            static_cast<Receiver&&>(this->__receiver_),
+            std::make_exception_ptr(std::system_error(-cqe.res, std::system_category())));
         }
       }
     };
@@ -232,62 +224,61 @@ namespace exec { namespace __io_uring {
       stdexec::set_error_t(std::exception_ptr),
       stdexec::set_stopped_t()>;
 
-    template <class _Receiver>
+    template <class Receiver>
     using __operation_t =
-      stdexec::__t<__open_operation<stdexec::__id<stdexec::__decay_t<_Receiver>>>>;
+      stdexec::__t<__open_operation<stdexec::__id<stdexec::__decay_t<Receiver>>>>;
 
-    io_uring_context* __context_;
-    __open_data __data_;
+    io_uring_context* context_;
+    open_data data_;
 
-    explicit __read_sender(io_uring_context& __context, __open_data __data) noexcept
-      : __context_{&__context}
-      , __data_{static_cast<__open_data&&>(__data)} {
+    explicit __read_sender(io_uring_context& context, open_data data) noexcept
+      : context_{&context}
+      , data_{static_cast<open_data&&>(data)} {
     }
 
     template <__decays_to<__read_sender> _Self, class _Rcvr>
     friend auto tag_invoke(connect_t, _Self&& __sender, _Rcvr&& __rcvr) noexcept {
       return __operation_t<_Rcvr>{
         std::in_place,
-        static_cast<_Self&&>(__sender).__data_,
-        *__sender.__context_,
+        static_cast<_Self&&>(__sender).data_,
+        *__sender.context_,
         static_cast<_Rcvr&&>(__rcvr)};
     }
   };
 
   template <class _RcvrId>
   struct __write_operation {
-    using _Receiver = stdexec::__t<_RcvrId>;
+    using Receiver = stdexec::__t<_RcvrId>;
 
-    struct __impl : __stoppable_op_base<_Receiver> {
+    struct __impl : __stoppable_op_base<Receiver> {
       std::span<std::span<std::byte>> __buffers_;
-      int __fd_;
+      int fd_;
 
-      __impl(std::span<::iovec> __data, io_uring_context& __context, _Receiver&& __receiver)
-        : __stoppable_op_base<_Receiver>{__context, static_cast<_Receiver&&>(__receiver)}
-        , __buffers_{__data} {
+      __impl(std::span<::iovec> data, io_uring_context& context, Receiver&& receiver)
+        : __stoppable_op_base<Receiver>{context, static_cast<Receiver&&>(receiver)}
+        , __buffers_{data} {
       }
 
       static constexpr std::false_type ready() noexcept {
         return {};
       }
 
-      void submit(::io_uring_sqe& __sqe) noexcept {
-        ::io_uring_sqe __sqe_{};
-        __sqe_.opcode = IORING_OP_WRITEV;
-        __sqe_.fd = __fd_;
-        __sqe_.addr = bit_cast<__u64>(__buffers_.data());
-        __sqe_.len = __buffers_.size();
+      void submit(::io_uring_sqe& sqe) noexcept {
+        ::io_uring_sqe sqe_{};
+        sqe_.opcode = IORING_OP_WRITEV;
+        sqe_.fd = fd_;
+        sqe_.addr = bit_cast<__u64>(__buffers_.data());
+        sqe_.len = __buffers_.size();
       }
 
-      void complete(const ::io_uring_cqe& __cqe) noexcept {
-        if (__cqe.res >= 0) {
-          stdexec::set_value(
-            static_cast<_Receiver&&>(this->__receiver_), );
+      void complete(const ::io_uring_cqe& cqe) noexcept {
+        if (cqe.res >= 0) {
+          stdexec::set_value(static_cast<Receiver&&>(this->__receiver_), );
         } else {
-          STDEXEC_ASSERT(__cqe.res < 0);
+          STDEXEC_ASSERT(cqe.res < 0);
           stdexec::set_error(
-            static_cast<_Receiver&&>(this->__receiver_),
-            std::make_exception_ptr(std::system_error(-__cqe.res, std::system_category())));
+            static_cast<Receiver&&>(this->__receiver_),
+            std::make_exception_ptr(std::system_error(-cqe.res, std::system_category())));
         }
       }
     };
@@ -305,30 +296,30 @@ namespace exec { namespace __io_uring {
       stdexec::set_error_t(std::exception_ptr),
       stdexec::set_stopped_t()>;
 
-    template <class _Receiver>
+    template <class Receiver>
     using __operation_t =
-      stdexec::__t<__open_operation<stdexec::__id<stdexec::__decay_t<_Receiver>>>>;
+      stdexec::__t<__open_operation<stdexec::__id<stdexec::__decay_t<Receiver>>>>;
 
-    io_uring_context* __context_;
-    __open_data __data_;
+    io_uring_context* context_;
+    open_data data_;
 
-    explicit __write_sender(io_uring_context& __context, __open_data __data) noexcept
-      : __context_{&__context}
-      , __data_{static_cast<__open_data&&>(__data)} {
+    explicit __write_sender(io_uring_context& context, open_data data) noexcept
+      : context_{&context}
+      , data_{static_cast<open_data&&>(data)} {
     }
 
     template <__decays_to<__write_sender> _Self, class _Rcvr>
     friend auto tag_invoke(connect_t, _Self&& __sender, _Rcvr&& __rcvr) noexcept {
       return __operation_t<_Rcvr>{
         std::in_place,
-        static_cast<_Self&&>(__sender).__data_,
-        *__sender.__context_,
+        static_cast<_Self&&>(__sender).data_,
+        *__sender.context_,
         static_cast<_Rcvr&&>(__rcvr)};
     }
   };
 
   struct __file_handle {
-    native_fd_handle __native_;
+    native_fd_handle native_;
 
     using buffer_type = std::span<std::byte>;
     using buffers_type = std::span<buffer_type>;
@@ -336,44 +327,44 @@ namespace exec { namespace __io_uring {
     using const_buffers_type = std::span<const_buffer_type>;
     using extent_type = ::off_t;
 
-    friend __close_sender tag_invoke(async_resource::close_t, __file_handle __handle) noexcept {
-      return {__handle.__native_.__context_, __handle.__native_.__fd_};
+    close_sender close(async_resource::close_t) const noexcept {
+      return native_.close(async_resource::close);
     }
 
     friend __write_sender tag_invoke(
       async::write_t,
-      __file_handle __handle,
-      const_buffers_type __data,
+      __file_handle handle,
+      const_buffers_type data,
       extent_type __offset) noexcept;
 
     friend __read_sender tag_invoke(
       async::read_t,
-      __file_handle __handle,
-      buffers_type __data,
+      __file_handle handle,
+      buffers_type data,
       extent_type __offset) noexcept;
   };
 
   struct __file {
-    io_uring_context& __context_;
-    __open_data __data_;
+    io_uring_context& context_;
+    open_data data_;
 
     explicit __file(
-      io_uring_context& __context,
+      io_uring_context& context,
       std::filesystem::path __path,
       int __dirfd,
       int __flags,
       ::mode_t __mode) noexcept
-      : __context_{__context}
-      , __data_{static_cast<std::filesystem::path&&>(__path), __dirfd, __flags, __mode} {
+      : context_{context}
+      , data_{static_cast<std::filesystem::path&&>(__path), __dirfd, __flags, __mode} {
     }
 
     friend __open_sender tag_invoke(exec::async_resource::open_t, const __file& __file) noexcept {
-      return __open_sender{__file.__context_, __file.__data_};
+      return __open_sender{__file.context_, __file.data_};
     }
   };
 
   struct __io_scheduler {
-    io_uring_context* __context_;
+    io_uring_context* context_;
 
     using path_type = __file;
     using file_type = __file;
@@ -381,8 +372,8 @@ namespace exec { namespace __io_uring {
     template <same_as<async::file_t> _File, same_as<__io_scheduler> _Scheduler>
     friend file_type tag_invoke(_File, _Scheduler __self) noexcept {
       return file_type{
-        *__self.__context_,
-        __open_data{static_cast<std::filesystem::path&&>(__path), __dirfd, __flags, __mode}
+        *__self.context_,
+        open_data{static_cast<std::filesystem::path&&>(__path), __dirfd, __flags, __mode}
       };
     }
   };

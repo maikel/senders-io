@@ -15,7 +15,10 @@
  */
 #pragma once
 
+#include "../concepts.hpp"
 #include "./sequence_concepts.hpp"
+
+#include <exec/env.hpp>
 
 namespace sio {
   namespace empty_sequence_ {
@@ -35,15 +38,15 @@ namespace sio {
       using completion_signatures = stdexec::completion_signatures<>;
 
       template <receiver_of<completion_signatures> Rcvr>
-      operation<Rcvr> sequence_connect(exec::sequence_connect_t, Rcvr&& rcvr) const
-        noexcept(__nothrow_decay_copyable<Rcvr>) {
+      operation<Rcvr> subscribe(exec::subscribe_t, Rcvr&& rcvr) const
+        noexcept(nothrow_decay_copyable<Rcvr>) {
         return {static_cast<Rcvr&&>(rcvr)};
       }
 
       auto get_sequence_env(exec::get_sequence_env_t) const noexcept {
-        return __make_env(
-          __with_(exec::parallelism, exec::lock_step),
-          __with_(exec::cardinality, std::integral_constant<std::size_t, 0>{}));
+        return exec::make_env(
+          exec::with(exec::parallelism, exec::lock_step),
+          exec::with(exec::cardinality, std::integral_constant<std::size_t, 0>{}));
       }
     };
 

@@ -29,8 +29,12 @@ target_sources(sio INTERFACE
   FILES
     source/sio/sequence/empty_sequence.hpp
     source/sio/sequence/first.hpp
-    source/sio/sequence/meta.hpp
-    source/sio/sequence/sequence_concepts.hpp)
+    source/sio/sequence/ignore_all.hpp
+    source/sio/sequence/iterate.hpp
+    source/sio/sequence/sequence_concepts.hpp
+    source/sio/sequence/then_each.hpp
+    source/sio/sequence/transform_each.hpp
+    source/sio/sequence/zip.hpp)
 target_link_libraries(sio INTERFACE STDEXEC::stdexec)
 target_compile_features(sio INTERFACE cxx_std_20)
 

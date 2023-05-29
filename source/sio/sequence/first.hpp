@@ -228,13 +228,13 @@ namespace sio {
       using base_type = operation_base<Receiver, ResultVariant, IsLockStep<Sender>>;
       using receiver_t = receiver<Receiver, ResultVariant, IsLockStep<Sender>>;
 
-      exec::sequence_connect_result_t<Sender, receiver_t> op_;
+      exec::subscribe_result_t<Sender, receiver_t> op_;
 
       operation(Sender&& sndr, Receiver rcvr)     //
         noexcept(nothrow_decay_copyable<Receiver> //
-                   && exec::nothrow_sequence_connectable<Sender, receiver_t>)
+                   && exec::nothrow_subscribeable<Sender, receiver_t>)
         : base_type{{}, static_cast<Receiver&&>(rcvr)}
-        , op_{exec::sequence_connect(static_cast<Sender&&>(sndr), receiver_t{this})} {
+        , op_{exec::subscribe(static_cast<Sender&&>(sndr), receiver_t{this})} {
       }
 
       void start(start_t) noexcept {

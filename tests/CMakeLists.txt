@@ -16,6 +16,7 @@ add_executable(test_sio
   sequence/test_ignore_all.cpp
   sequence/test_iterate.cpp
   sequence/test_transform_each.cpp
+  sequence/test_zip.cpp
 )
 target_link_libraries(test_sio PRIVATE sio::sio Catch2::Catch2)
 

@@ -62,13 +62,13 @@ namespace sio {
 
     template <class Sender, class Receiver, class Adaptor>
     struct operation : operation_base<Receiver, Adaptor> {
-      exec::sequence_connect_result_t<Sender, receiver<Receiver, Adaptor>> op_;
+      exec::subscribe_result_t<Sender, receiver<Receiver, Adaptor>> op_;
 
       operation(Sender&& sndr, Receiver rcvr, Adaptor adaptor)
         : operation_base<
           Receiver,
           Adaptor>{static_cast<Receiver&&>(rcvr), static_cast<Adaptor&&>(adaptor)}
-        , op_{exec::sequence_connect(
+        , op_{exec::subscribe(
             static_cast<Sender&&>(sndr),
             receiver<Receiver, Adaptor>{this})} {
       }
@@ -98,7 +98,7 @@ namespace sio {
       template <decays_to<sender> Self, stdexec::receiver Receiver>
         requires exec::sequence_receiver_of<Receiver, completion_sigs_t<Self, env_of_t<Receiver>>>
               && exec::sequence_sender_to<copy_cvref_t<Self, Sender>, receiver<Receiver, Adaptor>>
-      static auto sequence_connect(Self&& self, exec::sequence_connect_t, Receiver rcvr)
+      static auto subscribe(Self&& self, exec::subscribe_t, Receiver rcvr)
         -> operation<copy_cvref_t<Self, Sender>, Receiver, Adaptor> {
         return {
           static_cast<Self&&>(self).sender_,
