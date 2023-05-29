@@ -39,7 +39,7 @@ jobs:
       run: cmake -B ${{github.workspace}}/catch2-build -S ${{github.workspace}}/catch2 -DCMAKE_INSTALL_PREFIX=${{github.workspace}}/catch2-install -DBUILD_TESTING=OFF
 
     - name: Build Catch2
-      run: cmake --build -j 4 ${{github.workspace}}/catch2-build
+      run: cmake --build ${{github.workspace}}/catch2-build --parallel 4
 
     - name: Install Catch2
       run: cmake --install ${{github.workspace}}/catch2-build
