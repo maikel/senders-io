@@ -31,8 +31,6 @@ jobs:
       run: cmake --install ${{github.workspace}}/stdexec-build
 
     - uses: actions/checkout@v3
-
-    - uses: actions/checkout@v3
       with:
         repository: catchorg/Catch2
         path: catch2
@@ -46,7 +44,7 @@ jobs:
     - name: Install Catch2
       run: cmake --install ${{github.workspace}}/catch2-build
 
-    - uses: actions/checkout@
+    - uses: actions/checkout@v3
       with:
         path: sio
 
