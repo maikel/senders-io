@@ -34,6 +34,7 @@ jobs:
       with:
         repository: catchorg/Catch2
         path: catch2
+        ref: v2.13.6
 
     - name: Configure Catch2
       run: cmake -B ${{github.workspace}}/catch2-build -S ${{github.workspace}}/catch2 -DCMAKE_INSTALL_PREFIX=${{github.workspace}}/catch2-install -DBUILD_TESTING=OFF
