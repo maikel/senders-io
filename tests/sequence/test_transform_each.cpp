@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-#include "sio/transform_each.hpp"
+#include "sio/sequence/transform_each.hpp"
 
-#include "sio/then_each.hpp"
-#include "sio/first.hpp"
-#include "sio/iterate.hpp"
+#include "sio/sequence/then_each.hpp"
+#include "sio/sequence/first.hpp"
+#include "sio/sequence/iterate.hpp"
 
 #include <catch2/catch.hpp>
 

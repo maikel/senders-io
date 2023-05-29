@@ -15,8 +15,10 @@
  */
 #pragma once
 
+#include "../concepts.hpp"
 #include "./sequence_concepts.hpp"
 
+#include <exec/env.hpp>
 #include <exec/trampoline_scheduler.hpp>
 
 #include <ranges>
@@ -54,8 +56,7 @@ namespace sio {
 
       template <__decays_to<sender> Self, receiver_of<completion_signatures> ItemRcvr>
       static auto connect(Self&& self, connect_t, ItemRcvr rcvr) //
-        noexcept(__nothrow_decay_copyable<ItemRcvr>)
-          -> item_operation<Iterator, Sentinel, ItemRcvr> {
+        noexcept(nothrow_decay_copyable<ItemRcvr>) -> item_operation<Iterator, Sentinel, ItemRcvr> {
         return {static_cast<ItemRcvr&&>(rcvr), self.parent_};
       }
     };
@@ -146,8 +147,8 @@ namespace sio {
           exec::__next_sender_of_t<Receiver, sender_t<Range>>,
           next_receiver<Range, Receiver>>
       static operation<Range, Receiver>
-        sequence_connect(Self&& self, exec::sequence_connect_t, Receiver rcvr) noexcept(
-          __nothrow_decay_copyable<Receiver>) {
+        subscribe(Self&& self, exec::subscribe_t, Receiver rcvr) //
+        noexcept(nothrow_decay_copyable<Receiver>) {
         return {
           {std::ranges::begin(self.range_), std::ranges::end(self.range_)},
           static_cast<Receiver&&>(rcvr)
@@ -156,11 +157,11 @@ namespace sio {
 
       auto get_sequence_env(exec::get_sequence_env_t) const noexcept {
         if constexpr (std::ranges::sized_range<Range>) {
-          return __make_env(
-            __with_(exec::parallelism, exec::lock_step),
-            __with_(exec::cardinality, std::ranges::size(range_)));
+          return exec::make_env(
+            exec::with(exec::parallelism, exec::lock_step),
+            exec::with(exec::cardinality, std::ranges::size(range_)));
         } else {
-          return __make_env(__with_(exec::parallelism, exec::lock_step));
+          return exec::make_env(exec::with(exec::parallelism, exec::lock_step));
         }
       }
     };

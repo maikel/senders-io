@@ -13,4 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include "sio/sequence/empty_sequence.hpp"
+
+#include "sio/sequence/zip.hpp"
+
+#include <catch2/catch.hpp>
+
+TEST_CASE("zip - with just", "[zip]") {
+  auto sender = sio::zip(stdexec::just());
+} 

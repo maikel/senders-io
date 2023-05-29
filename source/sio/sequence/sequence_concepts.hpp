@@ -15,6 +15,7 @@
  */
 #pragma once
 
+#include <exec/env.hpp>
 #include <exec/sequence_senders.hpp>
 
 namespace exec {
@@ -81,7 +82,8 @@ namespace exec {
     requires tag_invocable<get_sequence_env_t, const Sequence&>
     constexpr tag_invoke_result_t<get_sequence_env_t,const Sequence&>
     operator()(const Sequence& seq)
-      const noexcept {static_assert(nothrow_tag_invocable<get_sequence_env_t, const Sequence&>);
+      const noexcept {
+      static_assert(nothrow_tag_invocable<get_sequence_env_t, const Sequence&>);
       return tag_invoke(*this, seq);
     }
 
@@ -94,19 +96,18 @@ namespace exec {
     template <sender Sequence>
       requires(!sequence_sender<Sequence>)
     constexpr auto operator()(const Sequence& seq) const noexcept {
-      return __make_env(
-        __with_(cardinality_t{}, std::integral_constant<size_t, 1>{}),
-        __with_(parallelism_t{}, lock_step));
+      return make_env(
+        with(cardinality_t{}, std::integral_constant<size_t, 1>{}),
+        with(parallelism_t{}, lock_step));
     }
   };
 
+  inline constexpr get_sequence_env_t get_sequence_env;
 
-inline constexpr get_sequence_env_t get_sequence_env;
+  template <class EnvProvider>
+  using sequence_env_of_t = stdexec::__call_result_t<get_sequence_env_t, EnvProvider>;
 
-template <class EnvProvider>
-using sequence_env_of_t = stdexec::__call_result_t<get_sequence_env_t, EnvProvider>;
-
-template <class Sequence, class Receiver>
-concept nothrow_sequence_connectable =
-  stdexec::__nothrow_callable<exec::sequence_connect_t, Sequence, Receiver>;
+  template <class Sequence, class Receiver>
+  concept nothrow_subscribeable =
+    stdexec::__nothrow_callable<exec::subscribe_t, Sequence, Receiver>;
 }

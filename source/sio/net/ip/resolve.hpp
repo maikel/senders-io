@@ -371,7 +371,7 @@ namespace exec::async {
         net::ip::resolver_query __query_;
 
         template <
-          std::same_as<sequence_connect_t> _SequenceConnect,
+          std::same_as<subscribe_t> _SequenceConnect,
           stdexec::__decays_to<__t> _Self,
           class _Receiver>
         friend stdexec::__t<__operation<_Scheduler, _Receiver>>
