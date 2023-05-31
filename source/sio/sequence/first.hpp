@@ -24,16 +24,6 @@ namespace sio {
   namespace first_ {
     using namespace stdexec;
 
-    template <class Variant, class Type, class... Args>
-    concept emplaceable = requires(Variant& v, Args&&... args) {
-      v.template emplace<Type>(static_cast<Args&&>(args)...);
-    };
-
-    template <class Variant, class Type, class... Args>
-    concept nothrow_emplaceable = requires(Variant& v, Args&&... args) {
-      { v.template emplace<Type>(static_cast<Args&&>(args)...) } noexcept;
-    };
-
     template <class ResultVariant, bool IsLockStep>
     struct result_type {
       ResultVariant result_{};

@@ -107,7 +107,26 @@ namespace exec {
   template <class EnvProvider>
   using sequence_env_of_t = stdexec::__call_result_t<get_sequence_env_t, EnvProvider>;
 
+  template <class Rcvr, class Sender>
+  using next_sender_of_t = __next_sender_of_t<Rcvr, Sender>;
+
   template <class Sequence, class Receiver>
   concept nothrow_subscribeable =
     stdexec::__nothrow_callable<exec::subscribe_t, Sequence, Receiver>;
+
+  template <class Receiver>
+    requires stdexec::__callable<stdexec::set_value_t, Receiver>
+  void set_value_unless_stopped(Receiver&& rcvr) noexcept {
+    using token_type = stdexec::stop_token_of_t<stdexec::env_of_t<Receiver>>;
+    if constexpr (stdexec::unstoppable_token<token_type>) {
+      stdexec::set_value(static_cast<Receiver&&>(rcvr));
+    } else {
+      auto token = stdexec::get_stop_token(stdexec::get_env(rcvr));
+      if (!token.stop_requested()) {
+        stdexec::set_value(static_cast<Receiver&&>(rcvr));
+      } else {
+        stdexec::set_stopped(static_cast<Receiver&&>(rcvr));
+      }
+    }
+  }
 }
