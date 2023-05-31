@@ -16,10 +16,54 @@
 
 #include "sio/sequence/zip.hpp"
 
-#include "sio/sequence/ignore_all.hpp"
+#include "sio/sequence/first.hpp"
 
 #include <catch2/catch.hpp>
 
-TEST_CASE("zip - with just", "[zip]") {
-  auto sender = sio::zip(stdexec::just());
-} 
+struct any_receiver {
+  template <class Sender>
+  auto set_next(exec::set_next_t, Sender&&) noexcept {
+    return stdexec::just();
+  }
+
+  void set_value(stdexec::set_value_t) && noexcept {}
+
+  void set_stopped(stdexec::set_stopped_t) && noexcept {}
+  
+  template <class E>
+  void set_error(stdexec::set_error_t, E&&) && noexcept {}
+
+  stdexec::empty_env get_env(stdexec::get_env_t) const noexcept { return {}; }
+};
+
+TEST_CASE("zip - with just connects with any_receiver", "[zip]") {
+  auto sender = sio::zip(stdexec::just(42));
+  using zip_t = decltype(sender);
+  STATIC_REQUIRE(stdexec::sender<zip_t>);
+  STATIC_REQUIRE(exec::sequence_sender_in<zip_t, stdexec::empty_env>);
+  STATIC_REQUIRE(stdexec::receiver<any_receiver>);
+  STATIC_REQUIRE_FALSE(stdexec::sender_to<zip_t, any_receiver>);
+  using compls = stdexec::completion_signatures_of_t<zip_t, stdexec::empty_env>;
+  using seqs = exec::__sequence_completion_signatures_of_t<zip_t, stdexec::empty_env>;
+  STATIC_REQUIRE(stdexec::receiver_of<any_receiver, seqs>);
+  STATIC_REQUIRE(exec::sequence_receiver_of<any_receiver, compls>);
+  STATIC_REQUIRE(exec::sequence_receiver_from<any_receiver, zip_t>);
+  STATIC_REQUIRE(exec::sequence_sender_to<zip_t, any_receiver>);
+  auto op = exec::subscribe(sender, any_receiver{});
+  stdexec::start(op);
+}
+
+TEST_CASE("zip - with just connects with first", "[zip][first]") {
+  auto sequence = sio::zip(stdexec::just(42));
+  auto first = sio::first(sequence);
+  auto [v] = stdexec::sync_wait(first).value();
+  CHECK(v == 42);
+}
+
+TEST_CASE("zip - with two justs connects with first", "[zip][first]") {
+  auto sequence = sio::zip(stdexec::just(42), stdexec::just(43));
+  auto first = sio::first(sequence);
+  auto [v, w] = stdexec::sync_wait(first).value();
+  CHECK(v == 42);
+  CHECK(w == 43);
+}

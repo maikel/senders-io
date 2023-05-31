@@ -18,8 +18,7 @@
 #include "./sequence_concepts.hpp"
 
 #include "../concepts.hpp"
-
-#include <stdexec/__detail/__intrusive_queue.hpp>
+#include "../intrusive_queue.hpp"
 
 #include <optional>
 
@@ -27,16 +26,16 @@ namespace sio {
   namespace zip_ {
     using namespace stdexec;
 
-    template <class ResultVariant>
+    template <class ResultTuple>
     struct item_operation_result {
       item_operation_result* next_;
-      ResultVariant result_;
+      std::optional<ResultTuple> result_{};
       void (*complete_)(item_operation_result*) noexcept = nullptr;
     };
 
     template <class... Results>
     using item_operation_queues =
-      std::tuple<__intrusive_queue<item_operation_result<Results>::next_>...>;
+      std::tuple<intrusive_queue<&item_operation_result<Results>::next_>...>;
 
     struct on_stop_requested {
       in_place_stop_source& stop_source_;
@@ -91,9 +90,7 @@ namespace sio {
             auto clear_queue = []<class Queue>(Queue& queue) {
               while (!queue.empty()) {
                 auto op = queue.pop_front();
-                if (op->item_ready_) {
-                  op->complete_(op);
-                }
+                op->complete_(op);
               }
             };
             (clear_queue(queues), ...);
@@ -185,7 +182,7 @@ namespace sio {
         if (self->sequence_op_->stop_source_.stop_requested()) {
           stdexec::set_stopped(static_cast<ItemReceiver&&>(self->item_receiver_));
         } else {
-          set_value_unless_stopped(static_cast<ItemReceiver&&>(self->item_receiver_));
+          exec::set_value_unless_stopped(static_cast<ItemReceiver&&>(self->item_receiver_));
         }
       }
 
@@ -200,8 +197,14 @@ namespace sio {
       void notify_result_completion() noexcept {
         // Check whether this is the the last item operation to complete such that we can start the zipped operation
         constexpr int n_results = std::tuple_size_v<ResultTuple>;
-        const int n_ready_next_items = this->sequence_op_->n_ready_next_items_.fetch_add(
+        operation_base<Receiver, ResultTuple, ErrorsVariant>* sequence_op = this->sequence_op_;
+        std::unique_lock lock(std::get<Index>(sequence_op->mutexes_));
+        if (std::get<Index>(sequence_op->item_queues_).front() != this) {
+          return;
+        }
+        const int n_ready_next_items = sequence_op->n_ready_next_items_.fetch_add(
           1, std::memory_order_relaxed);
+        lock.unlock();
         if (n_ready_next_items == n_results - 1) {
           // 1. Collect all results and assemble one big tuple
           concat_result_types<ResultTuple> result = std::apply(
@@ -209,11 +212,11 @@ namespace sio {
               std::scoped_lock lock(mutexes...);
               return std::apply(
                 [&](auto&... queues) {
-                  return std::tuple_cat(std::move(*queues.front()->item_result_)...);
+                  return std::tuple_cat(std::move(*queues.front()->result_)...);
                 },
-                this->sequence_op_->item_queues_);
+                sequence_op->item_queues_);
             },
-            this->sequence_op_->mutexes_);
+            sequence_op->mutexes_);
 
           // 2. pop front items from shared queues into a private storage of this op.
           std::apply(
@@ -221,52 +224,61 @@ namespace sio {
               std::scoped_lock lock(mutexes...);
               this->items_.emplace(std::apply(
                 [](auto&... queues) { return std::tuple{queues.pop_front()...}; },
-                this->sequence_op_->item_queues_));
-              this->sequence_op_->n_ready_next_items_.store(-1, std::memory_order_relaxed);
+                sequence_op->item_queues_));
+              sequence_op->n_ready_next_items_.store(-1, std::memory_order_relaxed);
             },
-            this->sequence_op_->mutexes_);
+            sequence_op->mutexes_);
 
-          // 3.a. Check whether we need to stop
-          if (this->sequence_op_->stop_source_.stop_requested()) {
+          // 3. Check whether we need to stop
+          if (sequence_op->stop_source_.stop_requested()) {
             this->complete_all_item_ops();
             return;
           }
 
-          // 3.b. If continue, then start the zipped operation.
-          auto& op = zipped_op_.emplace(stdexec::__conv{[&] {
-            return stdexec::connect(
-              exec::set_next(
-                this->sequence_op_->receiver_,
-                std::apply(
-                  []<class... Args>(Args&&... args) {
-                    return stdexec::just(static_cast<Args&&>(args)...);
-                  },
-                  static_cast<concat_result_types<ResultTuple>&&>(result))),
-              zipped_receiver<Receiver, ResultTuple, ErrorsVariant>{this});
-          }});
-          stdexec::start(op);
+          // 4. count ready items in shared queues
+          // An inline completion of the zipped operation could destroy ALL the operations.
+          // So we need to check whether there is outstanding work before we start the zipped operation.
+          // Since there is no other candidate to complete the ready items, we can safely assume that
+          // we will be the one to start the next zipped operation, too.
 
-          // 4. pop front items from shared queues into a private storage of this op.
           bool is_next_completion = false;
           std::apply(
             [&](auto&... mutexes) {
               std::scoped_lock lock(mutexes...);
               const int count = std::apply(
-                [](auto&... queues) { return (queues.empty() + ...); },
-                this->sequence_op_->item_queues_);
+                [](auto&... queues) { return (!queues.empty() + ...); }, sequence_op->item_queues_);
               if (count == n_results) {
-                this->sequence_op_->n_ready_next_items_.store(count - 1, std::memory_order_relaxed);
+                sequence_op->n_ready_next_items_.store(count - 1, std::memory_order_relaxed);
                 is_next_completion = true;
               } else {
-                this->sequence_op_->n_ready_next_items_.store(count, std::memory_order_relaxed);
+                sequence_op->n_ready_next_items_.store(count, std::memory_order_relaxed);
               }
             },
-            this->sequence_op_->mutexes_);
+            sequence_op->mutexes_);
 
-          // 5. If all next items are ready, then start the next zipped operation
+          // 5. Start the zipped operation.
+          try {
+            auto& op = zipped_op_.emplace(stdexec::__conv{[&] {
+              return stdexec::connect(
+                exec::set_next(
+                  sequence_op->receiver_,
+                  std::apply(
+                    []<class... Args>(Args&&... args) {
+                      return stdexec::just(static_cast<Args&&>(args)...);
+                    },
+                    static_cast<concat_result_types<ResultTuple>&&>(result))),
+                zipped_receiver<Receiver, ResultTuple, ErrorsVariant>{this});
+            }});
+            stdexec::start(op);
+          } catch (...) {
+            sequence_op->notify_error(std::current_exception());
+            this->complete_all_item_ops();
+            return;
+          }
+
+          // 6. If all next items are ready, then start the next zipped operation
           if (is_next_completion) {
-            static_cast<item_operation_base*>(
-              std::get<Index>(this->sequence_op_->item_queues_).front())
+            static_cast<item_operation_base*>(std::get<Index>(sequence_op->item_queues_).front())
               ->notify_result_completion();
           }
         }
@@ -284,7 +296,17 @@ namespace sio {
 
       template <class... Ts>
       void set_value(stdexec::set_value_t, Ts&&... args) && noexcept {
-        op_->notify_result_completion();
+        try {
+          op_->result_.emplace(static_cast<Ts&&>(args)...);
+        } catch (...) {
+          op_->sequence_op_->notify_error(std::current_exception());
+          stdexec::set_stopped(static_cast<ItemReceiver&&>(op_->item_receiver_));
+        }
+        if (!op_->sequence_op_->template push_back_item_op<Index>(op_)) {
+          stdexec::set_stopped(static_cast<ItemReceiver&&>(op_->item_receiver_));
+        } else {
+          op_->notify_result_completion();
+        }
       }
 
       void set_stopped(stdexec::set_stopped_t) && noexcept {
@@ -382,7 +404,11 @@ namespace sio {
       }
 
       void set_stopped(stdexec::set_stopped_t) && noexcept {
-        stdexec::set_stopped(static_cast<Receiver&&>(op_->receiver_));
+        if (op_->stop_source_.stop_requested()) {
+          exec::set_value_unless_stopped(static_cast<Receiver&&>(op_->receiver_));
+        } else {
+          stdexec::set_stopped(static_cast<Receiver&&>(op_->receiver_));
+        }
       }
 
       template <class Error>
@@ -451,6 +477,7 @@ namespace sio {
       using errors_variant = //
         __minvoke<
           __mconcat<__transform<__q<decay_t>, __nullable_variant_t>>,
+          __types<std::exception_ptr>,
           error_types_of_t<Senders, env_t<env_of_t<Receiver>>, __types>... >;
 
       using operation_base = zip_::operation_base<Receiver, result_tuple, errors_variant>;
@@ -480,7 +507,7 @@ namespace sio {
         typename traits<Receiver, Senders...>::result_tuple,
         typename traits<Receiver, Senders...>::errors_variant>;
 
-      typename traits<Receiver, Senders...>::op_states_tuple op_states_;
+      typename traits<Receiver, Senders...>::op_states_tuple<> op_states_;
 
       template <class SenderTuple, std::size_t... Is>
       operation(Receiver rcvr, SenderTuple&& sndr, std::index_sequence<Is...>)
@@ -502,12 +529,22 @@ namespace sio {
 
     template <std::size_t... Is, class... Senders>
     struct sender<std::index_sequence<Is...>, Senders...> {
+      using is_sender = exec::sequence_tag;
+
       std::tuple<Senders...> senders_;
 
       template <decays_to<sender> Self, class Receiver>
-      static auto subscribe(Self&& self, exec::subscribe_t, Receiver rcvr)
-        -> operation<Receiver, copy_cvref_t<Self, Senders>...> {
-        return {};
+      static auto subscribe(Self&& self, exec::subscribe_t, Receiver rcvr) //
+        noexcept(nothrow_constructible_from<
+                 operation<Receiver, copy_cvref_t<Self, Senders>...>,
+                 Receiver,
+                 copy_cvref_t<Self, std::tuple<Senders...>>,
+                 std::index_sequence<Is...>>)
+          -> operation<Receiver, copy_cvref_t<Self, Senders>...> {
+        return {
+          static_cast<Receiver&&>(rcvr),
+          static_cast<Self&&>(self).senders_,
+          std::index_sequence<Is...>{}};
       }
 
       template <decays_to<sender> Self, class Env>
