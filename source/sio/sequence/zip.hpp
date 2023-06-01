@@ -60,6 +60,7 @@ namespace sio {
       std::atomic<int> n_ready_next_items_{};
       in_place_stop_source stop_source_{};
       std::optional<on_stop> stop_callback_{};
+      std::atomic<int> n_pending_operations_{std::tuple_size_v<ResultTuple>};
 
       template <std::size_t Index>
       bool push_back_item_op(
@@ -387,6 +388,11 @@ namespace sio {
       }
 
       void set_value(stdexec::set_value_t) && noexcept {
+        int n_ops = op_->n_pending_operations_.fetch_sub(1, std::memory_order_relaxed);
+        if (n_ops > 1) {
+          op_->notify_stop();
+          return;
+        }
         auto token = stdexec::get_stop_token(stdexec::get_env(op_->receiver_));
         if (token.stop_requested()) {
           stdexec::set_stopped(static_cast<Receiver&&>(op_->receiver_));
@@ -404,6 +410,11 @@ namespace sio {
       }
 
       void set_stopped(stdexec::set_stopped_t) && noexcept {
+        int n_ops = op_->n_pending_operations_.fetch_sub(1, std::memory_order_relaxed);
+        if (n_ops > 1) {
+          op_->notify_stop();
+          return;
+        }
         if (op_->stop_source_.stop_requested()) {
           exec::set_value_unless_stopped(static_cast<Receiver&&>(op_->receiver_));
         } else {
@@ -413,6 +424,11 @@ namespace sio {
 
       template <class Error>
       void set_error(stdexec::set_error_t, Error&& error) && noexcept {
+        int n_ops = op_->n_pending_operations_.fetch_sub(1, std::memory_order_relaxed);
+        if (n_ops > 1) {
+          op_->notify_error(static_cast<Error&&>(error));
+          return;
+        }
         stdexec::set_error(static_cast<Receiver&&>(op_->receiver_), static_cast<Error&&>(error));
       }
 

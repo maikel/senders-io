@@ -17,6 +17,9 @@
 #include "sio/sequence/zip.hpp"
 
 #include "sio/sequence/first.hpp"
+#include "sio/sequence/iterate.hpp"
+#include "sio/sequence/ignore_all.hpp"
+#include "sio/sequence/then_each.hpp"
 
 #include <catch2/catch.hpp>
 
@@ -26,14 +29,19 @@ struct any_receiver {
     return stdexec::just();
   }
 
-  void set_value(stdexec::set_value_t) && noexcept {}
+  void set_value(stdexec::set_value_t) && noexcept {
+  }
 
-  void set_stopped(stdexec::set_stopped_t) && noexcept {}
-  
+  void set_stopped(stdexec::set_stopped_t) && noexcept {
+  }
+
   template <class E>
-  void set_error(stdexec::set_error_t, E&&) && noexcept {}
+  void set_error(stdexec::set_error_t, E&&) && noexcept {
+  }
 
-  stdexec::empty_env get_env(stdexec::get_env_t) const noexcept { return {}; }
+  stdexec::empty_env get_env(stdexec::get_env_t) const noexcept {
+    return {};
+  }
 };
 
 TEST_CASE("zip - with just connects with any_receiver", "[zip]") {
@@ -66,4 +74,30 @@ TEST_CASE("zip - with two justs connects with first", "[zip][first]") {
   auto [v, w] = stdexec::sync_wait(first).value();
   CHECK(v == 42);
   CHECK(w == 43);
+}
+
+TEST_CASE("zip - array with sender", "[zip][iterate]") {
+  std::array<int, 2> array{42, 43};
+  int count = 0;
+  auto sequence = sio::zip(stdexec::just(42), sio::iterate(array)) //
+                | sio::then_each([&](int v, int w) {
+                    ++count;
+                    CHECK(v == 42);
+                    CHECK(w == 42);
+                  });
+  stdexec::sync_wait(sio::ignore_all(sequence));
+  CHECK(count == 1);
+}
+
+TEST_CASE("zip - array with array", "[zip][iterate]") {
+  std::array<int, 3> array{42, 43, 44};
+  int count = 0;
+  auto sequence = sio::zip(sio::iterate(array), sio::iterate(array)) //
+                | sio::then_each([&](int v, int w) {
+                    CHECK(v == 42 + count);
+                    CHECK(v == w);
+                    ++count;
+                  });
+  stdexec::sync_wait(sio::ignore_all(sequence));
+  CHECK(count == 3);
 }
