@@ -60,7 +60,6 @@ namespace sio {
   template <class Sender, class Receiver>
   concept nothrow_connectable = stdexec::__nothrow_connectable<Sender, Receiver>;
 
-
   template <class Variant, class Type, class... Args>
   concept emplaceable = requires(Variant& v, Args&&... args) {
     v.template emplace<Type>(static_cast<Args&&>(args)...);
@@ -70,4 +69,6 @@ namespace sio {
   concept nothrow_emplaceable = requires(Variant& v, Args&&... args) {
     { v.template emplace<Type>(static_cast<Args&&>(args)...) } noexcept;
   };
+
+  using nullable_variant = stdexec::__nullable_variant_t;
 }

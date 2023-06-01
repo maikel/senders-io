@@ -11,13 +11,16 @@ find_package(Catch2 REQUIRED)
 
 add_executable(test_sio
   test_main.cpp
+  test_async_resource.cpp
   sequence/test_empty_sequence.cpp
   sequence/test_first.cpp
   sequence/test_ignore_all.cpp
   sequence/test_iterate.cpp
+  sequence/test_merge_each.cpp
   sequence/test_transform_each.cpp
   sequence/test_zip.cpp
 )
+target_include_directories(test_sio PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(test_sio PRIVATE sio::sio Catch2::Catch2)
 
 include(CTest)
