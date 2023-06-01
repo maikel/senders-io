@@ -27,14 +27,24 @@ target_sources(sio INTERFACE
   TYPE HEADERS
   BASE_DIRS source
   FILES
+    source/sio/net/address.hpp
+    source/sio/net/resolve.hpp
+    source/sio/net/tcp.hpp
+    source/sio/net/udp.hpp
     source/sio/sequence/empty_sequence.hpp
     source/sio/sequence/first.hpp
     source/sio/sequence/ignore_all.hpp
     source/sio/sequence/iterate.hpp
+    source/sio/sequence/merge_each.hpp
     source/sio/sequence/sequence_concepts.hpp
     source/sio/sequence/then_each.hpp
     source/sio/sequence/transform_each.hpp
-    source/sio/sequence/zip.hpp)
+    source/sio/sequence/zip.hpp
+    source/sio/async_resource.hpp
+    source/sio/concepts.hpp
+    source/sio/file_handle.hpp
+    source/sio/intrusive_queue.hpp
+    source/sio/io_concepts.hpp)
 target_link_libraries(sio INTERFACE STDEXEC::stdexec)
 target_compile_features(sio INTERFACE cxx_std_20)
 
