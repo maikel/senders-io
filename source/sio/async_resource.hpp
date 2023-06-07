@@ -183,8 +183,8 @@ namespace sio {
       using completion_signatures = stdexec::completion_signatures<stdexec::set_value_t(Token&&)>;
 
       template <class ItemReceiver>
-      auto connect(stdexec::connect_t, ItemReceiver rcvr) const noexcept(nothrow_decay_copyable<ItemReceiver>)
-        -> run_operation<Token, ItemReceiver> {
+      auto connect(stdexec::connect_t, ItemReceiver rcvr) const
+        noexcept(nothrow_decay_copyable<ItemReceiver>) -> run_operation<Token, ItemReceiver> {
         return {token_, static_cast<ItemReceiver&&>(rcvr)};
       }
     };
@@ -310,6 +310,13 @@ namespace sio {
 
   using async_resource_::run_t;
   using async_resource_::run;
+
+  template <class _Resource>
+  concept resource = requires(_Resource&& __resource) { run(__resource); };
+
+  template <resource _Resource, class _Env = stdexec::empty_env>
+  using resource_token_of_t =
+    stdexec::__single_sender_value_t< call_result_t<run_t, _Resource&>, _Env>;
 
   struct use_resources_t {
     template <class Fn, class... Resources>

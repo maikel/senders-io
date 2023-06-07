@@ -15,10 +15,11 @@
  */
 #pragma once
 
-#include <stdexec/execution.hpp>
-
-#include <exec/timed_scheduler.hpp>
 #include "./async_resource.hpp"
+#include "./concepts.hpp"
+
+#include <stdexec/execution.hpp>
+#include <exec/timed_scheduler.hpp>
 
 #include <filesystem>
 
@@ -77,49 +78,163 @@ namespace sio { namespace async {
     stdexec::__single_typed_sender<Sender, Env> && //
     std::same_as<Tp, stdexec::__single_sender_value_t<Sender, Env>>;
 
-  struct path_t {
+  namespace path_ {
+    struct path_t;
+  }
+  extern const path_::path_t path;
+
+  namespace path_ {
     template <class Factory, class... Args>
-      requires stdexec::tag_invocable<path_t, Factory, Args...>
-    auto operator()(const Factory& factory, Args&&... args) const
-      noexcept(stdexec::nothrow_tag_invocable<path_t, Factory, Args...>)
-        -> stdexec::tag_invoke_result_t<path_t, Factory, Args...> {
-      return tag_invoke(*this, factory, static_cast<Args&&>(args)...);
-    }
-  };
+    concept has_path_member_customization = requires(Factory factory, Args&&... args) {
+      factory.path(path, static_cast<Args&&>(args)...);
+    };
+
+    template <class Factory, class... Args>
+    concept nothrow_path_member_customization = requires(Factory factory, Args&&... args) {
+      { factory.path(path, static_cast<Args&&>(args)...) } noexcept;
+    };
+
+    template <class Factory, class... Args>
+    concept has_path_static_member_customization = requires(Factory factory, Args&&... args) {
+      Factory::path(factory, path, static_cast<Args&&>(args)...);
+    };
+
+    template <class Factory, class... Args>
+    concept nothrow_path_static_member_customization = requires(Factory factory, Args&&... args) {
+      { Factory::path(factory, path, static_cast<Args&&>(args)...) } noexcept;
+    };
+
+    template <class Factory, class... Args>
+    concept has_path_customization = has_path_member_customization<Factory, Args...>
+                                   || has_path_static_member_customization<Factory, Args...>;
+
+    template <class Factory, class... Args>
+    concept nothrow_path_customization = nothrow_path_member_customization<Factory, Args...>
+                                       || nothrow_path_static_member_customization<Factory, Args...>;
+
+    struct path_t {
+      template <class Factory, class... Args>
+        requires has_path_customization<Factory, Args...>
+      auto operator()(const Factory& factory, Args&&... args) const
+        noexcept(nothrow_path_customization<Factory, Args...>) {
+        if constexpr (has_path_member_customization<Factory, Args...>) {
+          return factory.path(path, static_cast<Args&&>(args)...);
+        } else {
+          return Factory::path(factory, path, static_cast<Args&&>(args)...);
+        }
+      }
+    };
+  }
+  using path_t = path_::path_t;
+  inline constexpr path_t path{};
 
   template <class Factory>
-  using path_factory = callable<path_t, Factory, std::filesystem::path>;
+  concept path_factory = callable<path_t, Factory, std::filesystem::path>;
 
   template <path_factory Factory>
   using path_handle_of_t =
     resource_token_of_t<call_result_t<path_t, Factory, std::filesystem::path>>;
 
   namespace byte_stream_ {
+    struct read_t;
+  }
+
+  extern const byte_stream_::read_t read;
+
+  namespace byte_stream_ {
+    template <class Handle, class MutableBufferSequence>
+    concept has_read_member_function =
+      requires(const Handle& handle, MutableBufferSequence buffers) { handle.read(read, buffers); };
+
+    template <class Handle, class MutableBufferSequence>
+    concept nothrow_read_member_function =
+      requires(const Handle& handle, MutableBufferSequence buffers) {
+        { handle.read(read, buffers) } noexcept;
+      };
+
+    template <class Handle, class MutableBufferSequence>
+    concept has_static_read_member_function =
+      requires(const Handle& handle, MutableBufferSequence buffers) {
+        Handle::read(handle, read, buffers);
+      };
+
+    template <class Handle, class MutableBufferSequence>
+    concept nothrow_static_read_member_function =
+      requires(const Handle& handle, MutableBufferSequence buffers) {
+        { Handle::read(handle, read, buffers) } noexcept;
+      };
+
+    template <class Handle, class MutableBufferSequence>
+    concept has_read_customization = has_read_member_function<Handle, MutableBufferSequence>
+                                  || has_static_read_member_function<Handle, MutableBufferSequence>;
+
+    template <class Handle, class MutableBufferSequence>
+    concept nothrow_read_customization =
+      nothrow_read_member_function<Handle, MutableBufferSequence>
+      || nothrow_static_read_member_function<Handle, MutableBufferSequence>;
+
     struct read_t {
       template <class Handle, class MutableBufferSequence>
-        requires stdexec::tag_invocable<read_t, Handle, MutableBufferSequence>
+        requires has_read_customization<Handle, MutableBufferSequence>
       auto operator()(const Handle& handle, MutableBufferSequence&& buffers) const
-        noexcept(stdexec::nothrow_tag_invocable<read_t, Handle, MutableBufferSequence>)
-          -> stdexec::tag_invoke_result_t<read_t, Handle, MutableBufferSequence> {
-        using __result_t = tag_invoke_result_t<read_t, Handle, MutableBufferSequence>;
-        static_assert(
-          single_value_sender<__result_t, MutableBufferSequence>,
-          "read must return a sender that completes with the input buffers type");
-        return tag_invoke(*this, handle, static_cast<MutableBufferSequence&&>(buffers));
+        noexcept(nothrow_read_customization<Handle, MutableBufferSequence>) {
+        if constexpr (has_read_member_function<Handle, MutableBufferSequence>) {
+          return handle.read(read, static_cast<MutableBufferSequence&&>(buffers));
+        } else {
+          return Handle::read(handle, read, static_cast<MutableBufferSequence&&>(buffers));
+        }
       }
     };
+  }
+
+  namespace byte_stream_ {
+    struct write_t;
+  }
+
+  extern const byte_stream_::write_t write;
+
+  namespace byte_stream_ {
+    template <class Handle, class ConstBufferSequence>
+    concept has_write_member_function =
+      requires(const Handle& handle, ConstBufferSequence buffers) { handle.write(write, buffers); };
+
+    template <class Handle, class ConstBufferSequence>
+    concept nothrow_write_member_function =
+      requires(const Handle& handle, ConstBufferSequence buffers) {
+        { handle.write(write, buffers) } noexcept;
+      };
+
+    template <class Handle, class ConstBufferSequence>
+    concept has_static_write_member_function =
+      requires(const Handle& handle, ConstBufferSequence buffers) {
+        Handle::write(handle, write, buffers);
+      };
+
+    template <class Handle, class ConstBufferSequence>
+    concept nothrow_static_write_member_function =
+      requires(const Handle& handle, ConstBufferSequence buffers) {
+        { Handle::write(handle, write, buffers) } noexcept;
+      };
+
+    template <class Handle, class ConstBufferSequence>
+    concept has_write_customization = has_write_member_function<Handle, ConstBufferSequence>
+                                   || has_static_write_member_function<Handle, ConstBufferSequence>;
+
+    template <class Handle, class ConstBufferSequence>
+    concept nothrow_write_customization =
+      nothrow_write_member_function<Handle, ConstBufferSequence>
+      || nothrow_static_write_member_function<Handle, ConstBufferSequence>;
 
     struct write_t {
       template <class Handle, class ConstBufferSequence>
-        requires stdexec::tag_invocable<write_t, Handle, ConstBufferSequence>
+        requires has_write_customization<Handle, ConstBufferSequence>
       auto operator()(const Handle& handle, ConstBufferSequence&& buffers) const
-        noexcept(stdexec::nothrow_tag_invocable<write_t, Handle, ConstBufferSequence>)
-          -> stdexec::tag_invoke_result_t<write_t, Handle, ConstBufferSequence> {
-        using __result_t = stdexec::tag_invoke_result_t<read_t, Handle, ConstBufferSequence>;
-        static_assert(
-          single_value_sender<__result_t, ConstBufferSequence>,
-          "write must return a sender that completes with the input buffers type");
-        return tag_invoke(*this, handle, static_cast<ConstBufferSequence&&>(buffers));
+        noexcept(nothrow_write_customization<Handle, ConstBufferSequence>) {
+        if constexpr (has_write_member_function<Handle, ConstBufferSequence>) {
+          return handle.write(write, static_cast<ConstBufferSequence&&>(buffers));
+        } else {
+          return Handle::write(handle, write, static_cast<ConstBufferSequence&&>(buffers));
+        }
       }
     };
   } // namespace byte_stream_
@@ -226,4 +341,4 @@ namespace sio { namespace async {
   concept io_scheduler = exec::timed_scheduler<Scheduler> && file_factory<Scheduler>;
 
 } // namespace async
-} // namespace exec
+} // namespace sio

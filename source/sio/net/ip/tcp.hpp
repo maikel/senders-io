@@ -17,7 +17,7 @@
 
 #include <netinet/in.h>
 
-namespace exec::net::ip {
+namespace sio::ip {
 
   class tcp {
    public:

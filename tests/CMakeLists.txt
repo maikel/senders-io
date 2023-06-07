@@ -12,6 +12,7 @@ find_package(Catch2 REQUIRED)
 add_executable(test_sio
   test_main.cpp
   test_async_resource.cpp
+  test_file_handle.cpp
   sequence/test_empty_sequence.cpp
   sequence/test_first.cpp
   sequence/test_ignore_all.cpp
