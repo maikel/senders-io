@@ -189,12 +189,12 @@ namespace sio::io_uring {
 
   template <class Receiver>
   struct read_operation_base : stoppable_op_base<Receiver> {
-    std::span<const ::iovec> buffers_;
+    std::variant<::iovec, std::span<const ::iovec>> buffers_;
     int fd_;
 
     read_operation_base(
       exec::io_uring_context& context,
-      std::span<const ::iovec> data,
+      std::variant<::iovec, std::span<const ::iovec>> data,
       int fd,
       Receiver&& receiver) noexcept
       : stoppable_op_base<Receiver>{context, static_cast<Receiver&&>(receiver)}
@@ -210,8 +210,14 @@ namespace sio::io_uring {
       ::io_uring_sqe sqe_{};
       sqe_.opcode = IORING_OP_READV;
       sqe_.fd = fd_;
-      sqe_.addr = std::bit_cast<__u64>(buffers_.data());
-      sqe_.len = buffers_.size();
+      if (buffers_.index() == 0) {
+        sqe_.addr = std::bit_cast<__u64>(std::get_if<0>(&buffers_));
+        sqe_.len = 1;
+      } else {
+        std::span<const ::iovec> buffers = std::get_if<1>(&buffers_);
+        sqe_.addr = std::bit_cast<__u64>(buffers.data());
+        sqe_.len = buffers.size();
+      }
       sqe = sqe_;
     }
 
@@ -239,10 +245,16 @@ namespace sio::io_uring {
       stdexec::set_stopped_t()>;
 
     exec::io_uring_context* context_;
-    std::span<const ::iovec> buffers_;
+    std::variant<::iovec, std::span<const ::iovec>> buffers_;
     int fd_;
 
-    read_sender(exec::io_uring_context& context, std::span<::iovec> buffers, int fd) noexcept
+    read_sender(exec::io_uring_context& context, std::span<const ::iovec> buffers, int fd) noexcept
+      : context_{&context}
+      , buffers_{buffers}
+      , fd_{fd} {
+    }
+
+    read_sender(exec::io_uring_context& context, ::iovec buffers, int fd) noexcept
       : context_{&context}
       , buffers_{buffers}
       , fd_{fd} {
