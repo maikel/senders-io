@@ -191,15 +191,18 @@ namespace sio::io_uring {
   struct read_operation_base : stoppable_op_base<Receiver> {
     std::variant<::iovec, std::span<const ::iovec>> buffers_;
     int fd_;
+    ::off_t offset_;
 
     read_operation_base(
       exec::io_uring_context& context,
       std::variant<::iovec, std::span<const ::iovec>> data,
       int fd,
+      ::off_t offset,
       Receiver&& receiver) noexcept
       : stoppable_op_base<Receiver>{context, static_cast<Receiver&&>(receiver)}
       , buffers_{data}
-      , fd_{fd} {
+      , fd_{fd}
+      , offset_{offset} {
     }
 
     static constexpr std::false_type ready() noexcept {
@@ -210,6 +213,7 @@ namespace sio::io_uring {
       ::io_uring_sqe sqe_{};
       sqe_.opcode = IORING_OP_READV;
       sqe_.fd = fd_;
+      sqe_.off = offset_;
       if (buffers_.index() == 0) {
         sqe_.addr = std::bit_cast<__u64>(std::get_if<0>(&buffers_));
         sqe_.len = 1;
@@ -247,22 +251,33 @@ namespace sio::io_uring {
     exec::io_uring_context* context_;
     std::variant<::iovec, std::span<const ::iovec>> buffers_;
     int fd_;
+    ::off_t offset_;
 
-    read_sender(exec::io_uring_context& context, std::span<const ::iovec> buffers, int fd) noexcept
+    read_sender(
+      exec::io_uring_context& context,
+      std::span<const ::iovec> buffers,
+      int fd,
+      ::off_t offset = 0) noexcept
       : context_{&context}
       , buffers_{buffers}
-      , fd_{fd} {
+      , fd_{fd}
+      , offset_{offset} {
     }
 
-    read_sender(exec::io_uring_context& context, ::iovec buffers, int fd) noexcept
+    read_sender(
+      exec::io_uring_context& context,
+      ::iovec buffers,
+      int fd,
+      ::off_t offset = 0) noexcept
       : context_{&context}
       , buffers_{buffers}
-      , fd_{fd} {
+      , fd_{fd}
+      , offset_{offset} {
     }
 
     template <stdexec::receiver_of<completion_signatures> Receiver>
     read_operation<Receiver> connect(stdexec::connect_t, Receiver rcvr) const noexcept {
-      return read_operation<Receiver>{std::in_place, *context_, fd_, buffers_};
+      return read_operation<Receiver>{std::in_place, *context_, fd_, offset_, buffers_};
     }
   };
 
@@ -270,15 +285,18 @@ namespace sio::io_uring {
   struct write_operation_base : stoppable_op_base<Receiver> {
     std::variant<::iovec, std::span<const ::iovec>> buffers_;
     int fd_;
+    ::off_t offset_;
 
     write_operation_base(
       exec::io_uring_context& context,
       std::variant<::iovec, std::span<const ::iovec>> data,
       int fd,
+      ::off_t offset,
       Receiver&& receiver)
       : stoppable_op_base<Receiver>{context, static_cast<Receiver&&>(receiver)}
       , buffers_{data}
-      , fd_{fd} {
+      , fd_{fd}
+      , offset_{offset} {
     }
 
     static constexpr std::false_type ready() noexcept {
@@ -289,6 +307,7 @@ namespace sio::io_uring {
       ::io_uring_sqe sqe_{};
       sqe_.opcode = IORING_OP_WRITEV;
       sqe_.fd = fd_;
+      sqe_.off = offset_;
       if (buffers_.index() == 0) {
         sqe_.addr = std::bit_cast<__u64>(std::get_if<0>(&buffers_));
         sqe_.len = 1;
@@ -326,29 +345,34 @@ namespace sio::io_uring {
     exec::io_uring_context* context_;
     std::variant<::iovec, std::span<const ::iovec>> buffers_;
     int fd_;
+    ::off_t offset_{};
 
     explicit write_sender(
       exec::io_uring_context& context,
       std::span<const ::iovec> data,
-      int fd) noexcept
+      int fd,
+      ::off_t offset = 0) noexcept
       : context_{&context}
       , buffers_{data}
-      , fd_{fd} {
+      , fd_{fd}
+      , offset_{offset} {
     }
 
     explicit write_sender(
       exec::io_uring_context& context,
       ::iovec data,
-      int fd) noexcept
+      int fd,
+      ::off_t offset = 0) noexcept
       : context_{&context}
       , buffers_{data}
-      , fd_{fd} {
+      , fd_{fd}
+      , offset_{offset} {
     }
 
     template <class Receiver>
     write_operation<Receiver> connect(stdexec::connect_t, Receiver rcvr) const noexcept {
       return write_operation<Receiver>{
-        std::in_place, *context_, buffers_, fd_, static_cast<Receiver&&>(rcvr)};
+        std::in_place, *context_, buffers_, fd_, offset_, static_cast<Receiver&&>(rcvr)};
     }
   };
 
@@ -364,15 +388,14 @@ namespace sio::io_uring {
     }
 
     write_sender write(async::write_t, const_buffers_type data) const noexcept {
-      std::span<const ::iovec> buffers{std::bit_cast<::iovec*>(data.data()), data.size()};
+      std::span<const ::iovec> buffers{std::bit_cast<const ::iovec*>(data.data()), data.size()};
       return write_sender(*this->context_, buffers, this->fd_);
     }
 
     write_sender write(async::write_t, const_buffer_type data) const noexcept {
       ::iovec buffer = {
         .iov_base = const_cast<void*>(static_cast<const void*>(data.data())),
-        .iov_len = data.size()
-      };
+        .iov_len = data.size()};
       return write_sender(*this->context_, buffer, this->fd_);
     }
 
@@ -382,8 +405,40 @@ namespace sio::io_uring {
     }
 
     read_sender read(async::read_t, buffer_type data) const noexcept {
-      buffers_type buffers{&data, 1};
-      return read(async::read, buffers);
+      ::iovec buffer = {.iov_base = data.data(), .iov_len = data.size()};
+      return read_sender(*this->context_, buffer, this->fd_);
+    }
+  };
+
+  struct seekable_byte_stream : byte_stream {
+    using buffer_type = std::span<std::byte>;
+    using buffers_type = std::span<buffer_type>;
+    using const_buffer_type = std::span<const std::byte>;
+    using const_buffers_type = std::span<const_buffer_type>;
+    using extent_type = ::off_t;
+
+    using byte_stream::byte_stream;
+
+    write_sender write(async::write_t, const_buffers_type data, extent_type offset) const noexcept {
+      std::span<const ::iovec> buffers{std::bit_cast<const ::iovec*>(data.data()), data.size()};
+      return write_sender{*this->context_, buffers, this->fd_, offset};
+    }
+
+    write_sender write(async::write_t, const_buffer_type data, extent_type offset) const noexcept {
+      ::iovec buffer = {
+        .iov_base = const_cast<void*>(static_cast<const void*>(data.data())),
+        .iov_len = data.size()};
+      return write_sender{*this->context_, buffer, this->fd_, offset};
+    }
+
+    read_sender read(async::read_t, buffers_type data, extent_type offset) const noexcept {
+      std::span<::iovec> buffers{std::bit_cast<::iovec*>(data.data()), data.size()};
+      return read_sender(*this->context_, buffers, this->fd_, offset);
+    }
+
+    read_sender read(async::read_t, buffer_type data, extent_type offset) const noexcept {
+      ::iovec buffer = {.iov_base = data.data(), .iov_len = data.size()};
+      return read_sender(*this->context_, buffer, this->fd_, offset);
     }
   };
 
@@ -437,7 +492,7 @@ namespace sio::io_uring {
 
     auto open() const noexcept {
       return stdexec::then(open_sender{context_, data_}, [](native_fd_handle fd) noexcept {
-        return byte_stream{fd};
+        return seekable_byte_stream{fd};
       });
     }
 
