@@ -21,7 +21,7 @@
 
 #include <exec/finally.hpp>
 
-namespace sio {
+namespace sio::async {
   namespace async_resource_ {
     struct open_t;
     extern const open_t open;
@@ -322,7 +322,7 @@ namespace sio {
     template <class Fn, class... Resources>
     auto operator()(Fn&& fun, Resources&... resources) const {
       return sio::first(
-        sio::let_value_each(sio::zip(sio::run(resources)...), static_cast<Fn&&>(fun)));
+        sio::let_value_each(sio::zip(sio::async::run(resources)...), static_cast<Fn&&>(fun)));
     }
   };
 

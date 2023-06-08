@@ -7,7 +7,7 @@ elseif (NOT TARGET sio::sio)
   message(FATAL_ERROR "sio::sio target is not defined. Please use add_subdirectory to add sio to your project")
 endif ()
 
-find_package(fmt REQUIRED)
+# find_package(fmt REQUIRED)
 
 add_executable(echo_standard_input echo_standard_input.cpp)
-target_link_libraries(echo_standard_input PRIVATE sio::sio fmt::fmt)
+target_link_libraries(echo_standard_input PRIVATE sio::sio)

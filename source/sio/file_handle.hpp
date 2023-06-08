@@ -107,8 +107,12 @@ namespace sio::io_uring {
       , fd_{fd} {
     }
 
-    close_sender close(close_t) const noexcept {
+    close_sender close() const noexcept {
       return {context_, fd_};
+    }
+
+    close_sender close(async::close_t) const noexcept {
+      return close();
     }
   };
 
@@ -208,6 +212,7 @@ namespace sio::io_uring {
       sqe_.fd = fd_;
       sqe_.addr = std::bit_cast<__u64>(buffers_.data());
       sqe_.len = buffers_.size();
+      sqe = sqe_;
     }
 
     void complete(const ::io_uring_cqe& cqe) noexcept {
@@ -251,12 +256,12 @@ namespace sio::io_uring {
 
   template <class Receiver>
   struct write_operation_base : stoppable_op_base<Receiver> {
-    std::span<const ::iovec> buffers_;
+    std::variant<::iovec, std::span<const ::iovec>> buffers_;
     int fd_;
 
     write_operation_base(
       exec::io_uring_context& context,
-      std::span<const ::iovec> data,
+      std::variant<::iovec, std::span<const ::iovec>> data,
       int fd,
       Receiver&& receiver)
       : stoppable_op_base<Receiver>{context, static_cast<Receiver&&>(receiver)}
@@ -272,8 +277,15 @@ namespace sio::io_uring {
       ::io_uring_sqe sqe_{};
       sqe_.opcode = IORING_OP_WRITEV;
       sqe_.fd = fd_;
-      sqe_.addr = std::bit_cast<__u64>(buffers_.data());
-      sqe_.len = buffers_.size();
+      if (buffers_.index() == 0) {
+        sqe_.addr = std::bit_cast<__u64>(std::get_if<0>(&buffers_));
+        sqe_.len = 1;
+      } else {
+        std::span<const ::iovec> buffers = *std::get_if<1>(&buffers_);
+        sqe_.addr = std::bit_cast<__u64>(buffers.data());
+        sqe_.len = buffers.size();
+      }
+      sqe = sqe_;
     }
 
     void complete(const ::io_uring_cqe& cqe) noexcept {
@@ -300,12 +312,21 @@ namespace sio::io_uring {
       stdexec::set_stopped_t()>;
 
     exec::io_uring_context* context_;
-    std::span<const ::iovec> buffers_;
+    std::variant<::iovec, std::span<const ::iovec>> buffers_;
     int fd_;
 
     explicit write_sender(
       exec::io_uring_context& context,
       std::span<const ::iovec> data,
+      int fd) noexcept
+      : context_{&context}
+      , buffers_{data}
+      , fd_{fd} {
+    }
+
+    explicit write_sender(
+      exec::io_uring_context& context,
+      ::iovec data,
       int fd) noexcept
       : context_{&context}
       , buffers_{data}
@@ -326,15 +347,39 @@ namespace sio::io_uring {
     using const_buffers_type = std::span<const_buffer_type>;
     using extent_type = ::off_t;
 
-    write_sender
-      write(async::write_t, const_buffers_type data, extent_type __offset) const noexcept;
+    explicit byte_stream(native_fd_handle fd) noexcept
+      : native_fd_handle{fd} {
+    }
 
-    read_sender read(async::read_t, buffers_type data, extent_type __offset) const noexcept;
+    write_sender write(async::write_t, const_buffers_type data) const noexcept {
+      std::span<const ::iovec> buffers{std::bit_cast<::iovec*>(data.data()), data.size()};
+      return write_sender(*this->context_, buffers, this->fd_);
+    }
+
+    write_sender write(async::write_t, const_buffer_type data) const noexcept {
+      ::iovec buffer = {
+        .iov_base = const_cast<void*>(static_cast<const void*>(data.data())),
+        .iov_len = data.size()
+      };
+      return write_sender(*this->context_, buffer, this->fd_);
+    }
+
+    read_sender read(async::read_t, buffers_type data) const noexcept {
+      std::span<::iovec> buffers{std::bit_cast<::iovec*>(data.data()), data.size()};
+      return read_sender(*this->context_, buffers, this->fd_);
+    }
+
+    read_sender read(async::read_t, buffer_type data) const noexcept {
+      buffers_type buffers{&data, 1};
+      return read(async::read, buffers);
+    }
   };
 
   struct path_handle : native_fd_handle {
     static path_handle current_directory() noexcept {
-      return {native_fd_handle{nullptr, AT_FDCWD}};
+      return {
+        native_fd_handle{nullptr, AT_FDCWD}
+      };
     }
   };
 
@@ -347,11 +392,15 @@ namespace sio::io_uring {
       , path_{static_cast<std::filesystem::path&&>(path)} {
     }
 
-    auto open(open_t) const {
+    auto open() const {
       open_data data_{path_, AT_FDCWD, O_RDONLY, 0};
       return stdexec::then(open_sender{context_, data_}, [](native_fd_handle fd) noexcept {
         return path_handle{fd};
       });
+    }
+
+    auto open(async::open_t) const {
+      return open();
     }
   };
 
@@ -374,10 +423,14 @@ namespace sio::io_uring {
           static_cast<mode_t>(mode)} {
     }
 
-    auto open(open_t) const noexcept {
+    auto open() const noexcept {
       return stdexec::then(open_sender{context_, data_}, [](native_fd_handle fd) noexcept {
         return byte_stream{fd};
       });
+    }
+
+    auto open(async::open_t) const noexcept {
+      return open();
     }
   };
 
