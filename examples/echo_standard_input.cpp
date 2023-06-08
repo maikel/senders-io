@@ -2,6 +2,8 @@
 
 #include <exec/task.hpp>
 
+#include <iostream>
+
 template <class Tp>
 using task = exec::basic_task<
   Tp,
@@ -22,7 +24,7 @@ task<void> hello(sio::io_uring::byte_stream out) {
 
 int main() {
   exec::io_uring_context context{};
-  sio::io_uring::byte_stream out(sio::io_uring::native_fd_handle{context, STDOUT_FILENO});
-  stdexec::start_detached(hello(out));
-  context.run_until_empty();
+  sio::io_uring::native_fd_handle stdout_handle{context, STDOUT_FILENO};
+  sio::io_uring::byte_stream out(stdout_handle);
+  stdexec::sync_wait(stdexec::when_all(hello(out), context.run(exec::until::empty)));
 }
