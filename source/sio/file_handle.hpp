@@ -36,7 +36,9 @@ namespace sio::io_uring {
     int fd_;
 
     close_operation_base(exec::io_uring_context& context, Receiver receiver, int fd)
-      : fd_{fd} {
+      : context_{context}
+      , receiver_{static_cast<Receiver&&>(receiver)}
+      , fd_{fd} {
     }
 
     exec::io_uring_context& context() const noexcept {
@@ -56,12 +58,11 @@ namespace sio::io_uring {
 
     void complete(const ::io_uring_cqe& cqe) noexcept {
       if (cqe.res == 0) {
-        stdexec::set_value(static_cast<Receiver&&>(this->__receiver_), cqe.res);
+        stdexec::set_value(static_cast<Receiver&&>(receiver_));
       } else {
         SIO_ASSERT(cqe.res < 0);
         stdexec::set_error(
-          static_cast<Receiver&&>(this->__receiver_),
-          std::error_code(-cqe.res, std::system_category()));
+          static_cast<Receiver&&>(receiver_), std::error_code(-cqe.res, std::system_category()));
       }
     }
   };
@@ -89,7 +90,8 @@ namespace sio::io_uring {
 
     template <class Receiver>
     close_operation<Receiver> connect(stdexec::connect_t, Receiver rcvr) const noexcept {
-      return close_operation<Receiver>{*context_, static_cast<Receiver&&>(rcvr), fd_};
+      return close_operation<Receiver>{
+        std::in_place, *context_, static_cast<Receiver&&>(rcvr), fd_};
     }
   };
 
@@ -107,12 +109,8 @@ namespace sio::io_uring {
       , fd_{fd} {
     }
 
-    close_sender close() const noexcept {
-      return {context_, fd_};
-    }
-
     close_sender close(async::close_t) const noexcept {
-      return close();
+      return {context_, fd_};
     }
   };
 
@@ -152,7 +150,7 @@ namespace sio::io_uring {
         STDEXEC_ASSERT(cqe.res < 0);
         stdexec::set_error(
           static_cast<Receiver&&>(this->__receiver_),
-          std::make_exception_ptr(std::system_error(-cqe.res, std::system_category())));
+          std::error_code(-cqe.res, std::system_category()));
       }
     }
   };
@@ -165,7 +163,7 @@ namespace sio::io_uring {
 
     using completion_signatures = stdexec::completion_signatures<
       stdexec::set_value_t(native_fd_handle),
-      stdexec::set_error_t(std::exception_ptr),
+      stdexec::set_error_t(std::error_code),
       stdexec::set_stopped_t()>;
 
     exec::io_uring_context* context_;
@@ -444,7 +442,7 @@ namespace sio::io_uring {
 
   struct path_handle : native_fd_handle {
     static path_handle current_directory() noexcept {
-      return {
+      return path_handle{
         native_fd_handle{nullptr, AT_FDCWD}
       };
     }
@@ -459,15 +457,11 @@ namespace sio::io_uring {
       , path_{static_cast<std::filesystem::path&&>(path)} {
     }
 
-    auto open() const {
-      open_data data_{path_, AT_FDCWD, O_RDONLY, 0};
+    auto open(async::open_t) const {
+      open_data data_{path_, AT_FDCWD, O_PATH, 0};
       return stdexec::then(open_sender{context_, data_}, [](native_fd_handle fd) noexcept {
         return path_handle{fd};
       });
-    }
-
-    auto open(async::open_t) const {
-      return open();
     }
   };
 
@@ -490,14 +484,10 @@ namespace sio::io_uring {
           static_cast<mode_t>(mode)} {
     }
 
-    auto open() const noexcept {
+    auto open(async::open_t) const noexcept {
       return stdexec::then(open_sender{context_, data_}, [](native_fd_handle fd) noexcept {
         return seekable_byte_stream{fd};
       });
-    }
-
-    auto open(async::open_t) const noexcept {
-      return open();
     }
   };
 
@@ -516,7 +506,7 @@ namespace sio::io_uring {
       std::filesystem::path path,
       path_handle base = path_handle::current_directory(),
       async::creation creation = async::creation::open_existing,
-      async::mode mode = async::mode::none,
+      async::mode mode = async::mode::read,
       async::caching caching = async::caching::none) const noexcept {
       return file_type{
         *context_, static_cast<std::filesystem::path&&>(path), base, creation, mode, caching};
