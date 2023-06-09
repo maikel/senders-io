@@ -81,6 +81,7 @@ namespace sio { namespace async {
   namespace path_ {
     struct path_t;
   }
+
   extern const path_::path_t path;
 
   namespace path_ {
@@ -106,11 +107,11 @@ namespace sio { namespace async {
 
     template <class Factory, class... Args>
     concept has_path_customization = has_path_member_customization<Factory, Args...>
-                                   || has_path_static_member_customization<Factory, Args...>;
+                                  || has_path_static_member_customization<Factory, Args...>;
 
     template <class Factory, class... Args>
     concept nothrow_path_customization = nothrow_path_member_customization<Factory, Args...>
-                                       || nothrow_path_static_member_customization<Factory, Args...>;
+                                      || nothrow_path_static_member_customization<Factory, Args...>;
 
     struct path_t {
       template <class Factory, class... Args>
@@ -125,6 +126,7 @@ namespace sio { namespace async {
       }
     };
   }
+
   using path_t = path_::path_t;
   inline constexpr path_t path{};
 
@@ -274,16 +276,14 @@ namespace sio { namespace async {
   concept readable_byte_stream =
     with_buffer_typedefs<ByteStream>
     && requires(ByteStream stream, buffers_type_of_t<ByteStream> buffers) {
-         { async::read(stream, buffers) } -> single_value_sender<buffers_type_of_t<ByteStream>>;
+         { async::read(stream, buffers) } -> single_value_sender<std::size_t>;
        };
 
   template <class ByteStream>
   concept writable_byte_stream =
     with_buffer_typedefs<ByteStream>
     && requires(ByteStream stream, const_buffers_type_of_t<ByteStream> const_buffers) {
-         {
-           async::write(stream, const_buffers)
-         } -> single_value_sender<const_buffers_type_of_t<ByteStream>>;
+         { async::write(stream, const_buffers) } -> single_value_sender<std::size_t>;
        };
 
   template <class ByteStream>
@@ -301,12 +301,8 @@ namespace sio { namespace async {
       buffers_type_of_t<ByteStream> buffers,
       const_buffers_type_of_t<ByteStream> const_buffers,
       offset_type_of_t<ByteStream> offset) {
-      {
-        async::read(stream, buffers, offset)
-      } -> single_value_sender<buffers_type_of_t<ByteStream>>;
-      {
-        async::write(stream, const_buffers, offset)
-      } -> single_value_sender<buffers_type_of_t<ByteStream>>;
+      { async::read(stream, buffers, offset) } -> single_value_sender<std::size_t>;
+      { async::write(stream, const_buffers, offset) } -> single_value_sender<std::size_t>;
     };
 
   template <class _FileHandle>

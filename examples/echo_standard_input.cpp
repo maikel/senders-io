@@ -16,7 +16,7 @@ std::span<const std::byte> as_bytes(const char (&array)[N]) {
     reinterpret_cast<const std::byte*>(span.data()), span.size_bytes());
 }
 
-task<void> hello(sio::io_uring::byte_stream out) {
+task<void> hello(sio::async::writable_byte_stream auto out) {
   const char buffer[] = "Hello, world!\n";
   co_await sio::async::write(out, as_bytes(buffer));
   co_return;
@@ -26,5 +26,6 @@ int main() {
   exec::io_uring_context context{};
   sio::io_uring::native_fd_handle stdout_handle{context, STDOUT_FILENO};
   sio::io_uring::byte_stream out(stdout_handle);
+  static_assert(sio::async::byte_stream<sio::io_uring::byte_stream>);
   stdexec::sync_wait(stdexec::when_all(hello(out), context.run(exec::until::empty)));
 }
