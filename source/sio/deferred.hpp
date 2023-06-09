@@ -40,6 +40,7 @@ namespace sio {
     : data_{static_cast<std::variant<std::tuple<Args...>, Tp>&&>(other.data_)}
     , fun_{static_cast<Fn&&>(other.fun_)}
     {
+      SIO_ASSERT(data_.index() == 0);
     }
 
     deferred& operator=(deferred&&) = delete;
@@ -48,6 +49,7 @@ namespace sio {
     : data_{other.data_}
     , fun_{other.fun_}
     {
+      SIO_ASSERT(data_.index() == 0);
     }
 
     deferred& operator=(const deferred&) = delete;
