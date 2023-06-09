@@ -16,6 +16,7 @@
 #pragma once
 
 #include <array>
+#include <bit>
 #include <cstdint>
 #include <string>
 
@@ -24,7 +25,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 
-namespace exec::net::ip {
+namespace sio::net::ip {
 
   using in6_addr_type = ::in6_addr;
 
@@ -52,7 +53,7 @@ namespace exec::net::ip {
     }
 
     explicit address_v4(bytes_type __bytes) noexcept
-      : __addr_{bit_cast<::in_addr_t>(__bytes)} {
+      : __addr_{std::bit_cast<::in_addr_t>(__bytes)} {
     }
 
     uint_type to_uint() const noexcept {
@@ -60,7 +61,7 @@ namespace exec::net::ip {
     }
 
     bytes_type to_bytes() const noexcept {
-      return bit_cast<bytes_type>(__addr_);
+      return std::bit_cast<bytes_type>(__addr_);
     }
 
     template <class _Allocator = std::allocator<char>>
@@ -111,7 +112,7 @@ namespace exec::net::ip {
     }
 
     bytes_type to_bytes() const noexcept {
-      return bit_cast<bytes_type>(__addr_);
+      return std::bit_cast<bytes_type>(__addr_);
     }
 
     std::string to_string() const {
@@ -278,9 +279,9 @@ namespace exec::net::ip {
 
     ::sio::net::ip::address address() const noexcept {
       if (is_v4()) {
-        return address_v4{bit_cast<address_v4::bytes_type>(__data_.__v4.sin_addr)};
+        return address_v4{std::bit_cast<address_v4::bytes_type>(__data_.__v4.sin_addr)};
       } else {
-        return address_v6{bit_cast<address_v6::bytes_type>(__data_.__v6.sin6_addr)};
+        return address_v6{std::bit_cast<address_v6::bytes_type>(__data_.__v6.sin6_addr)};
       }
     }
 
