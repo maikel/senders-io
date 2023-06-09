@@ -36,11 +36,21 @@ namespace sio {
       , fun_{static_cast<Fn&&>(fun)} {
     }
 
-    deferred(deferred&& other) noexcept((nothrow_move_constructible<Args> && ...)) {
+    deferred(deferred&& other) noexcept((nothrow_move_constructible<Args> && ...)) 
+    : data_{static_cast<std::variant<std::tuple<Args...>, Tp>&&>(other.data_)}
+    , fun_{static_cast<Fn&&>(other.fun_)}
+    {
     }
 
-    deferred(const deferred& other) noexcept((nothrow_copy_constructible<Args> && ...)) {
+    deferred& operator=(deferred&&) = delete;
+
+    deferred(const deferred& other) noexcept((nothrow_copy_constructible<Args> && ...))
+    : data_{other.data_}
+    , fun_{other.fun_}
+    {
     }
+
+    deferred& operator=(const deferred&) = delete;
 
     void operator()() noexcept(nothrow_constructible_from<Tp, call_result_t<Fn, Args...>>) {
       SIO_ASSERT(data_.index() == 0);
