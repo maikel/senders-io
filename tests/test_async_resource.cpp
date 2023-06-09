@@ -42,10 +42,9 @@ TEST_CASE("async_resource - sequence", "[async_resource]") {
 }
 
 TEST_CASE("async_resource - use_resources", "[async_resource]") {
-  Resource res{};
   auto sndr = sio::async::use_resources([](Token) {
     return stdexec::just(42);
-  }, res);
+  }, sio::make_deferred<Resource>());
   auto result = stdexec::sync_wait(sndr);
   CHECK(result);
   auto [value] = result.value();

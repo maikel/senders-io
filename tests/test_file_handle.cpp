@@ -32,7 +32,7 @@ task<void> no_op_path(sio::io_uring::path_handle handle) {
 task<void> no_op_file(sio::io_uring::seekable_byte_stream input) {
   CHECK(input.get() > 0);
   std::byte buffer[8]{};
-  std::size_t nbytes = co_await sio::async::read(input, buffer);
+  std::size_t nbytes = co_await sio::async::read(input, buffer, 0);
   CHECK(nbytes == 0);
   co_return;
 }
@@ -46,14 +46,16 @@ void sync_wait(exec::io_uring_context& context, Sender&& sender) {
 TEST_CASE("file_handle - Open a path", "[file_handle]") {
   exec::io_uring_context context{};
   sio::io_uring::io_scheduler scheduler{&context};
-  sio::io_uring::path path = sio::async::path(scheduler, "/dev/null");
-  sync_wait(context, sio::async::use_resources(no_op_path, path));
+  sync_wait(
+    context,
+    sio::async::use_resources(
+      no_op_path, sio::defer(sio::async::path, scheduler, "/dev/null")));
 }
 
 TEST_CASE("file_handle - Open a file to /dev/null", "[file_handle]") {
   exec::io_uring_context context{};
   sio::io_uring::io_scheduler scheduler{&context};
   using sio::async::mode;
-  sio::io_uring::file file = sio::async::file(scheduler, "/dev/null", mode::read);
-  sync_wait(context, sio::async::use_resources(no_op_file, file));
+  auto file = sio::defer(sio::async::file, scheduler, "/dev/null", mode::read);
+  sync_wait(context, sio::async::use_resources(no_op_file, std::move(file)));
 }

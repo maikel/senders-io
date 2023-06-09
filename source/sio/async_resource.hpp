@@ -19,6 +19,8 @@
 #include "./sequence/let_value_each.hpp"
 #include "./sequence/zip.hpp"
 
+#include "./deferred.hpp"
+
 #include <exec/finally.hpp>
 
 namespace sio::async {
@@ -319,10 +321,15 @@ namespace sio::async {
     stdexec::__single_sender_value_t< call_result_t<run_t, Resource&>, Env>;
 
   struct use_resources_t {
-    template <class Fn, class... Resources>
-    auto operator()(Fn&& fun, Resources&... resources) const {
-      return sio::first(
-        sio::let_value_each(sio::zip(sio::async::run(resources)...), static_cast<Fn&&>(fun)));
+    template <class Fn, class... DeferredResources>
+    auto operator()(Fn&& fn, DeferredResources&&... resources) const {
+      return stdexec::let_value(
+        stdexec::just(static_cast<Fn&&>(fn), static_cast<DeferredResources&&>(resources)...),
+        []<class Fun, class... Deferred>(Fun&& fun, Deferred&... res) {
+          (res(), ...);
+          return sio::first(
+            sio::let_value_each(sio::zip(sio::async::run(*res)...), static_cast<Fun&&>(fun)));
+        });
     }
   };
 

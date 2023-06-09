@@ -31,6 +31,9 @@ namespace sio {
   using decay_t = stdexec::__decay_t<Ty>;
 
   template <class Ty, class... Args>
+  concept constructible_from = std::constructible_from<Ty, Args...>;
+
+  template <class Ty, class... Args>
   concept nothrow_constructible_from = stdexec::__nothrow_constructible_from<Ty, Args...>;
 
   template <class Ty>

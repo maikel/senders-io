@@ -144,46 +144,43 @@ namespace sio { namespace async {
   extern const byte_stream_::read_t read;
 
   namespace byte_stream_ {
-    template <class Handle, class MutableBufferSequence>
-    concept has_read_member_function =
-      requires(const Handle& handle, MutableBufferSequence buffers) { handle.read(read, buffers); };
+    template <class Handle, class... Args>
+    concept has_read_member_function = requires(const Handle& handle, Args&&... args) {
+      handle.read(read, static_cast<Args&&>(args)...);
+    };
 
-    template <class Handle, class MutableBufferSequence>
-    concept nothrow_read_member_function =
-      requires(const Handle& handle, MutableBufferSequence buffers) {
-        { handle.read(read, buffers) } noexcept;
-      };
+    template <class Handle, class... Args>
+    concept nothrow_read_member_function = requires(const Handle& handle, Args&&... args) {
+      { handle.read(read, static_cast<Args&&>(args)...) } noexcept;
+    };
 
-    template <class Handle, class MutableBufferSequence>
-    concept has_static_read_member_function =
-      requires(const Handle& handle, MutableBufferSequence buffers) {
-        Handle::read(handle, read, buffers);
-      };
+    template <class Handle, class... Args>
+    concept has_static_read_member_function = requires(const Handle& handle, Args&&... args) {
+      Handle::read(handle, read, static_cast<Args&&>(args)...);
+    };
 
-    template <class Handle, class MutableBufferSequence>
-    concept nothrow_static_read_member_function =
-      requires(const Handle& handle, MutableBufferSequence buffers) {
-        { Handle::read(handle, read, buffers) } noexcept;
-      };
+    template <class Handle, class... Args>
+    concept nothrow_static_read_member_function = requires(const Handle& handle, Args&&... args) {
+      { Handle::read(handle, read, static_cast<Args&&>(args)...) } noexcept;
+    };
 
-    template <class Handle, class MutableBufferSequence>
-    concept has_read_customization = has_read_member_function<Handle, MutableBufferSequence>
-                                  || has_static_read_member_function<Handle, MutableBufferSequence>;
+    template <class Handle, class... Args>
+    concept has_read_customization =
+      has_read_member_function<Handle, Args...> || has_static_read_member_function<Handle, Args...>;
 
-    template <class Handle, class MutableBufferSequence>
-    concept nothrow_read_customization =
-      nothrow_read_member_function<Handle, MutableBufferSequence>
-      || nothrow_static_read_member_function<Handle, MutableBufferSequence>;
+    template <class Handle, class... Args>
+    concept nothrow_read_customization = nothrow_read_member_function<Handle, Args...>
+                                      || nothrow_static_read_member_function<Handle, Args...>;
 
     struct read_t {
-      template <class Handle, class MutableBufferSequence>
-        requires has_read_customization<Handle, MutableBufferSequence>
-      auto operator()(const Handle& handle, MutableBufferSequence&& buffers) const
-        noexcept(nothrow_read_customization<Handle, MutableBufferSequence>) {
-        if constexpr (has_read_member_function<Handle, MutableBufferSequence>) {
-          return handle.read(read, static_cast<MutableBufferSequence&&>(buffers));
+      template <class Handle, class... Args>
+        requires has_read_customization<Handle, Args...>
+      auto operator()(const Handle& handle, Args&&... args) const
+        noexcept(nothrow_read_customization<Handle, Args...>) {
+        if constexpr (has_read_member_function<Handle, Args...>) {
+          return handle.read(read, static_cast<Args&&>(args)...);
         } else {
-          return Handle::read(handle, read, static_cast<MutableBufferSequence&&>(buffers));
+          return Handle::read(handle, read, static_cast<Args&&>(args)...);
         }
       }
     };
@@ -379,7 +376,7 @@ namespace sio { namespace async {
       template <path_factory FileFactory>
         requires has_full_customization<FileFactory>
       auto operator()(
-        FileFactory& factory,
+        FileFactory&& factory,
         std::filesystem::path path,
         path_handle_of_t<FileFactory> base,
         mode flags,
@@ -394,9 +391,11 @@ namespace sio { namespace async {
             mode,
             creation,
             caching>) {
-          return factory.file(file_t{}, path, base, flags, creat, chache);
+          return static_cast<FileFactory&&>(factory).file(
+            file_t{}, path, base, flags, creat, chache);
         } else {
-          return FileFactory::file(factory, file_t{}, path, base, flags, creat, chache);
+          return FileFactory::file(
+            static_cast<FileFactory&&>(factory), file_t{}, path, base, flags, creat, chache);
         }
       }
 
@@ -405,14 +404,14 @@ namespace sio { namespace async {
           path_handle_of_t<FileFactory>::current_directory();
         }
       auto operator()(
-        FileFactory& factory,
+        FileFactory&& factory,
         std::filesystem::path path,
         mode flags,
         creation creat = creation::open_existing,
         caching cache = caching::unchanged) const
         noexcept(nothrow_full_customization<FileFactory>) {
         return this->operator()(
-          factory,
+          static_cast<FileFactory&&>(factory),
           static_cast<std::filesystem::path&&>(path),
           path_handle_of_t<FileFactory>::current_directory(),
           flags,
