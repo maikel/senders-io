@@ -109,6 +109,10 @@ namespace sio::io_uring {
       , fd_{fd} {
     }
 
+    int get() const noexcept {
+      return fd_;
+    }
+
     close_sender close(async::close_t) const noexcept {
       return {context_, fd_};
     }
@@ -138,7 +142,9 @@ namespace sio::io_uring {
       ::io_uring_sqe sqe_{};
       sqe_.opcode = IORING_OP_OPENAT;
       sqe_.addr = std::bit_cast<__u64>(data_.path_.c_str());
-      sqe_.open_flags = O_PATH;
+      sqe_.fd = data_.dirfd_;
+      sqe_.open_flags = data_.flags_;
+      sqe_.len = data_.mode_;
       sqe = sqe_;
     }
 
@@ -216,7 +222,7 @@ namespace sio::io_uring {
         sqe_.addr = std::bit_cast<__u64>(std::get_if<0>(&buffers_));
         sqe_.len = 1;
       } else {
-        std::span<const ::iovec> buffers = std::get_if<1>(&buffers_);
+        std::span<const ::iovec> buffers = *std::get_if<1>(&buffers_);
         sqe_.addr = std::bit_cast<__u64>(buffers.data());
         sqe_.len = buffers.size();
       }
@@ -230,7 +236,7 @@ namespace sio::io_uring {
         STDEXEC_ASSERT(cqe.res < 0);
         stdexec::set_error(
           static_cast<Receiver&&>(this->__receiver_),
-          std::make_exception_ptr(std::system_error(-cqe.res, std::system_category())));
+          std::error_code(-cqe.res, std::system_category()));
       }
     }
   };
@@ -275,7 +281,8 @@ namespace sio::io_uring {
 
     template <stdexec::receiver_of<completion_signatures> Receiver>
     read_operation<Receiver> connect(stdexec::connect_t, Receiver rcvr) const noexcept {
-      return read_operation<Receiver>{std::in_place, *context_, fd_, offset_, buffers_};
+      return read_operation<Receiver>{
+        std::in_place, *context_, buffers_, fd_, offset_, static_cast<Receiver&&>(rcvr)};
     }
   };
 
@@ -417,6 +424,9 @@ namespace sio::io_uring {
 
     using byte_stream::byte_stream;
 
+    using byte_stream::read;
+    using byte_stream::write;
+
     write_sender write(async::write_t, const_buffers_type data, extent_type offset) const noexcept {
       std::span<const ::iovec> buffers{std::bit_cast<const ::iovec*>(data.data()), data.size()};
       return write_sender{*this->context_, buffers, this->fd_, offset};
@@ -473,8 +483,8 @@ namespace sio::io_uring {
       exec::io_uring_context& context,
       std::filesystem::path path,
       path_handle base,
-      async::creation creation,
       async::mode mode,
+      async::creation creation,
       async::caching caching) noexcept
       : context_{context}
       , data_{
@@ -504,12 +514,12 @@ namespace sio::io_uring {
     file_type file(
       async::file_t,
       std::filesystem::path path,
-      path_handle base = path_handle::current_directory(),
-      async::creation creation = async::creation::open_existing,
-      async::mode mode = async::mode::read,
-      async::caching caching = async::caching::none) const noexcept {
+      path_handle base,
+      async::mode mode,
+      async::creation creation,
+      async::caching caching) const noexcept {
       return file_type{
-        *context_, static_cast<std::filesystem::path&&>(path), base, creation, mode, caching};
+        *context_, static_cast<std::filesystem::path&&>(path), base, mode, creation, caching};
     }
   };
 }

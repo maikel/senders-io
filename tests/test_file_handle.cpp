@@ -24,18 +24,36 @@ using task = exec::basic_task<
 // }
 // }
 
-task<void> no_op(sio::io_uring::path_handle) {
+task<void> no_op_path(sio::io_uring::path_handle handle) {
+  CHECK(handle.get() > 0);
+  co_return;
+}
+
+task<void> no_op_file(sio::io_uring::seekable_byte_stream input) {
+  CHECK(input.get() > 0);
+  std::byte buffer[8]{};
+  std::size_t nbytes = co_await sio::async::read(input, buffer);
+  CHECK(nbytes == 0);
   co_return;
 }
 
 template <stdexec::sender Sender>
 void sync_wait(exec::io_uring_context& context, Sender&& sender) {
-  stdexec::sync_wait(stdexec::when_all(std::forward<Sender>(sender), context.run(exec::until::empty)));
+  stdexec::sync_wait(
+    stdexec::when_all(std::forward<Sender>(sender), context.run(exec::until::empty)));
 }
 
-TEST_CASE("Open a path") {
+TEST_CASE("file_handle - Open a path", "[file_handle]") {
   exec::io_uring_context context{};
   sio::io_uring::io_scheduler scheduler{&context};
   sio::io_uring::path path = sio::async::path(scheduler, "/dev/null");
-  sync_wait(context, sio::async::use_resources(no_op, path));
+  sync_wait(context, sio::async::use_resources(no_op_path, path));
+}
+
+TEST_CASE("file_handle - Open a file to /dev/null", "[file_handle]") {
+  exec::io_uring_context context{};
+  sio::io_uring::io_scheduler scheduler{&context};
+  using sio::async::mode;
+  sio::io_uring::file file = sio::async::file(scheduler, "/dev/null", mode::read);
+  sync_wait(context, sio::async::use_resources(no_op_file, file));
 }

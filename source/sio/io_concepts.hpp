@@ -311,25 +311,132 @@ namespace sio { namespace async {
   template <class Res, class Env = stdexec::no_env>
   concept file_resource = resource<Res> && file_handle<resource_token_of_t<Res, Env>>;
 
-  struct file_t { };
+  namespace file_ {
+    struct file_t;
+    extern const file_t file;
 
-  inline constexpr file_t file;
+    template <class FileFactory, class... Args>
+    concept has_member_customization = //
+      requires(FileFactory&& factory, Args&&... args) {
+        static_cast<FileFactory&&>(factory).file(file, static_cast<Args&&>(args)...);
+      };
+
+    template <class FileFactory, class... Args>
+    concept nothrow_member_customization = //
+      requires(FileFactory&& factory, Args&&... args) {
+        { static_cast<FileFactory&&>(factory).file(file, static_cast<Args&&>(args)...) } noexcept;
+      };
+
+    template <class FileFactory, class... Args>
+    concept has_static_member_customization = //
+      requires(FileFactory&& factory, Args&&... args) {
+        decay_t<FileFactory>::file(
+          static_cast<FileFactory>(factory), file, static_cast<Args&&>(args)...);
+      };
+
+    template <class FileFactory, class... Args>
+    concept nothrow_static_member_customization = //
+      requires(FileFactory&& factory, Args&&... args) {
+        {
+          decay_t<FileFactory>::file(
+            static_cast<FileFactory>(factory), file, static_cast<Args&&>(args)...)
+        } noexcept;
+      };
+
+    template <class FileFactory, class... Args>
+    concept has_customization =                         //
+      has_member_customization<FileFactory, Args...> || //
+      has_static_member_customization<FileFactory, Args...>;
+
+    template <class FileFactory, class... Args>
+    concept nothrow_customization =                         //
+      nothrow_member_customization<FileFactory, Args...> || //
+      nothrow_static_member_customization<FileFactory, Args...>;
+
+    template <class FileFactory>
+    concept has_full_customization = //
+      path_factory<FileFactory> &&   //
+      has_customization<
+        FileFactory,
+        std::filesystem::path,
+        path_handle_of_t<FileFactory>,
+        mode,
+        creation,
+        caching>;
+
+    template <class FileFactory>
+    concept nothrow_full_customization = //
+      path_factory<FileFactory> &&       //
+      nothrow_customization<
+        FileFactory,
+        std::filesystem::path,
+        path_handle_of_t<FileFactory>,
+        mode,
+        creation,
+        caching>;
+
+    struct file_t {
+      template <path_factory FileFactory>
+        requires has_full_customization<FileFactory>
+      auto operator()(
+        FileFactory& factory,
+        std::filesystem::path path,
+        path_handle_of_t<FileFactory> base,
+        mode flags,
+        creation creat = creation::open_existing,
+        caching chache = caching::unchanged) const
+        noexcept(nothrow_full_customization<FileFactory>) {
+        if constexpr (
+          has_member_customization<
+            FileFactory,
+            std::filesystem::path,
+            path_handle_of_t<FileFactory>,
+            mode,
+            creation,
+            caching>) {
+          return factory.file(file_t{}, path, base, flags, creat, chache);
+        } else {
+          return FileFactory::file(factory, file_t{}, path, base, flags, creat, chache);
+        }
+      }
+
+      template <path_factory FileFactory>
+        requires has_full_customization<FileFactory> && requires {
+          path_handle_of_t<FileFactory>::current_directory();
+        }
+      auto operator()(
+        FileFactory& factory,
+        std::filesystem::path path,
+        mode flags,
+        creation creat = creation::open_existing,
+        caching cache = caching::unchanged) const
+        noexcept(nothrow_full_customization<FileFactory>) {
+        return this->operator()(
+          factory,
+          static_cast<std::filesystem::path&&>(path),
+          path_handle_of_t<FileFactory>::current_directory(),
+          flags,
+          creat,
+          cache);
+      }
+    };
+
+    inline constexpr file_t file{};
+  }
+
+  using file_::file_t;
+  using file_::file;
 
   template <class Factory>
   concept file_factory =     //
     path_factory<Factory> && //
     requires(
       Factory factory,
-      path_handle_of_t<Factory> base,
       std::filesystem::path path,
+      path_handle_of_t<Factory> base,
       mode mode,
       creation creation,
       caching caching) {
-      { async::file(factory, path) } -> file_resource;
-      { async::file(factory, base, path) } -> file_resource;
-      { async::file(factory, base, path, mode) } -> file_resource;
-      { async::file(factory, base, path, mode) } -> file_resource;
-      { async::file(factory, base, path, mode, creation) } -> file_resource;
       { async::file(factory, base, path, mode, creation, caching) } -> file_resource;
     };
 
