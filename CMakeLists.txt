@@ -42,6 +42,7 @@ target_sources(sio INTERFACE
     source/sio/sequence/zip.hpp
     source/sio/async_resource.hpp
     source/sio/concepts.hpp
+    source/sio/deferred.hpp
     source/sio/file_handle.hpp
     source/sio/intrusive_queue.hpp
     source/sio/io_concepts.hpp)
