@@ -40,10 +40,10 @@ target_sources(sio INTERFACE
     source/sio/sequence/then_each.hpp
     source/sio/sequence/transform_each.hpp
     source/sio/sequence/zip.hpp
+    source/sio/io_uring/file_handle.hpp
     source/sio/async_resource.hpp
     source/sio/concepts.hpp
     source/sio/deferred.hpp
-    source/sio/file_handle.hpp
     source/sio/intrusive_queue.hpp
     source/sio/io_concepts.hpp)
 target_link_libraries(sio INTERFACE STDEXEC::stdexec)
