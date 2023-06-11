@@ -73,12 +73,16 @@ namespace sio::net::ip {
     }
 
     bool is_loopback() const noexcept {
-      return *this == loopback();
+      return (to_uint() & 0xFF000000) == 0x7F000000;
     }
 
-    bool is_multicast() const noexcept;
+    bool is_multicast() const noexcept {
+      return (to_uint() & 0xF0000000) == 0xE0000000;
+    }
 
-    bool is_unspecified() const noexcept;
+    bool is_unspecified() const noexcept {
+      return to_uint() == 0;
+    }
 
     friend auto operator<=>(const address_v4&, const address_v4&) = default;
 
