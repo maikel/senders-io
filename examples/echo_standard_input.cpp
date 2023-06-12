@@ -26,7 +26,7 @@ std::span<std::byte> as_bytes(char (&array)[N]) {
 
 task<void> write_all(sio::async::writable_byte_stream auto out, std::span<const std::byte> buffer) {
   while (!buffer.empty()) {
-    std::size_t nbytes = co_await sio::async::write(out, buffer);
+    std::size_t nbytes = co_await sio::async::write_some(out, buffer);
     buffer = buffer.subspan(nbytes);
   }
 }

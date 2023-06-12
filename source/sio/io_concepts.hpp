@@ -187,6 +187,58 @@ namespace sio { namespace async {
   }
 
   namespace byte_stream_ {
+    struct write_some_t;
+  }
+
+  extern const byte_stream_::write_some_t write_some;
+
+  namespace byte_stream_ {
+    template <class Handle, class... Args>
+    concept has_write_some_member_function =
+      requires(const Handle& handle, Args... buffers) { handle.write_some(write_some, buffers...); };
+
+    template <class Handle, class... Args>
+    concept nothrow_write_some_member_function =
+      requires(const Handle& handle, Args&&... buffers) {
+        { handle.write_some(write_some, static_cast<Args&&>(buffers)...) } noexcept;
+      };
+
+    template <class Handle, class... Args>
+    concept has_static_write_some_member_function =
+      requires(const Handle& handle, Args&&... buffers) {
+        Handle::write_some(handle, write_some, static_cast<Args&&>(buffers)...);
+      };
+
+    template <class Handle, class... Args>
+    concept nothrow_static_write_some_member_function =
+      requires(const Handle& handle, Args&&... buffers) {
+        { Handle::write_some(handle, write_some, static_cast<Args&&>(buffers)...) } noexcept;
+      };
+
+    template <class Handle, class... Args>
+    concept has_write_some_customization = has_write_some_member_function<Handle, Args...>
+                                   || has_static_write_some_member_function<Handle, Args...>;
+
+    template <class Handle, class... Args>
+    concept nothrow_write_some_customization =
+      nothrow_write_some_member_function<Handle, Args...>
+      || nothrow_static_write_some_member_function<Handle, Args...>;
+
+    struct write_some_t {
+      template <class Handle, class... Args>
+        requires has_write_some_customization<Handle, Args...>
+      auto operator()(const Handle& handle, Args&&... buffers) const
+        noexcept(nothrow_write_some_customization<Handle, Args...>) {
+        if constexpr (has_write_some_member_function<Handle, Args...>) {
+          return handle.write_some(write_some, static_cast<Args&&>(buffers)...);
+        } else {
+          return Handle::write_some(handle, write_some, static_cast<Args&&>(buffers)...);
+        }
+      }
+    };
+  } // namespace byte_stream_
+
+  namespace byte_stream_ {
     struct write_t;
   }
 
@@ -239,8 +291,10 @@ namespace sio { namespace async {
   } // namespace byte_stream_
 
   using byte_stream_::read_t;
+  using byte_stream_::write_some_t;
   using byte_stream_::write_t;
   inline constexpr read_t read;
+  inline constexpr write_some_t write_some;
   inline constexpr write_t write;
 
   template <class Stream>
@@ -280,7 +334,7 @@ namespace sio { namespace async {
   concept writable_byte_stream =
     with_buffer_typedefs<ByteStream>
     && requires(ByteStream stream, const_buffers_type_of_t<ByteStream> const_buffers) {
-         { async::write(stream, const_buffers) } -> single_value_sender<std::size_t>;
+         { async::write_some(stream, const_buffers) } -> single_value_sender<std::size_t>;
        };
 
   template <class ByteStream>
@@ -299,7 +353,7 @@ namespace sio { namespace async {
       const_buffers_type_of_t<ByteStream> const_buffers,
       offset_type_of_t<ByteStream> offset) {
       { async::read(stream, buffers, offset) } -> single_value_sender<std::size_t>;
-      { async::write(stream, const_buffers, offset) } -> single_value_sender<std::size_t>;
+      { async::write_some(stream, const_buffers, offset) } -> single_value_sender<std::size_t>;
     };
 
   template <class _FileHandle>
