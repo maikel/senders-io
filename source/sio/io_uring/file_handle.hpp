@@ -162,7 +162,7 @@ namespace sio::io_uring {
   };
 
   template <class Receiver>
-  using open_operation = exec::__io_uring::__stoppable_task_facade_t<open_operation_base<Receiver>>;
+  using open_operation = stoppable_task_facade<open_operation_base<Receiver>>;
 
   struct open_sender {
     using is_sender = void;
@@ -286,42 +286,37 @@ namespace sio::io_uring {
     }
   };
 
-  template <class Receiver>
-  struct write_operation_base : stoppable_op_base<Receiver> {
-    std::variant<::iovec, std::span<const ::iovec>> buffers_;
+  struct write_submission {
+    std::variant<::iovec, std::span<::iovec>> buffers_;
     int fd_;
     ::off_t offset_;
 
-    write_operation_base(
-      exec::io_uring_context& context,
-      std::variant<::iovec, std::span<const ::iovec>> data,
+    write_submission(
+      std::variant<::iovec, std::span<::iovec>> buffers,
       int fd,
-      ::off_t offset,
-      Receiver&& receiver)
-      : stoppable_op_base<Receiver>{context, static_cast<Receiver&&>(receiver)}
-      , buffers_{data}
-      , fd_{fd}
-      , offset_{offset} {
-    }
+      ::off_t offset) noexcept;
+
+    ~write_submission();
 
     static constexpr std::false_type ready() noexcept {
       return {};
     }
 
-    void submit(::io_uring_sqe& sqe) noexcept {
-      ::io_uring_sqe sqe_{};
-      sqe_.opcode = IORING_OP_WRITEV;
-      sqe_.fd = fd_;
-      sqe_.off = offset_;
-      if (buffers_.index() == 0) {
-        sqe_.addr = std::bit_cast<__u64>(std::get_if<0>(&buffers_));
-        sqe_.len = 1;
-      } else {
-        std::span<const ::iovec> buffers = *std::get_if<1>(&buffers_);
-        sqe_.addr = std::bit_cast<__u64>(buffers.data());
-        sqe_.len = buffers.size();
-      }
-      sqe = sqe_;
+    void submit(::io_uring_sqe& sqe) const noexcept;
+  };
+
+  template <class Receiver>
+  struct write_operation_base
+    : stoppable_op_base<Receiver>
+    , write_submission {
+    write_operation_base(
+      exec::io_uring_context& context,
+      std::variant<::iovec, std::span<::iovec>> data,
+      int fd,
+      ::off_t offset,
+      Receiver&& receiver)
+      : stoppable_op_base<Receiver>{context, static_cast<Receiver&&>(receiver)}
+      , write_submission(data, fd, offset) {
     }
 
     void complete(const ::io_uring_cqe& cqe) noexcept {
@@ -331,7 +326,7 @@ namespace sio::io_uring {
         STDEXEC_ASSERT(cqe.res < 0);
         stdexec::set_error(
           static_cast<write_operation_base&&>(*this).receiver(),
-          std::make_exception_ptr(std::system_error(-cqe.res, std::system_category())));
+          std::error_code(-cqe.res, std::system_category()));
       }
     }
   };
@@ -344,19 +339,19 @@ namespace sio::io_uring {
 
     using completion_signatures = stdexec::completion_signatures<
       stdexec::set_value_t(std::size_t),
-      stdexec::set_error_t(std::exception_ptr),
+      stdexec::set_error_t(std::error_code),
       stdexec::set_stopped_t()>;
 
     exec::io_uring_context* context_;
-    std::variant<::iovec, std::span<const ::iovec>> buffers_;
+    std::variant<::iovec, std::span<::iovec>> buffers_;
     int fd_;
-    ::off_t offset_{};
+    ::off_t offset_{-1};
 
     explicit write_sender(
       exec::io_uring_context& context,
-      std::span<const ::iovec> data,
+      std::span<::iovec> data,
       int fd,
-      ::off_t offset = 0) noexcept
+      ::off_t offset = -1) noexcept
       : context_{&context}
       , buffers_{data}
       , fd_{fd}
@@ -367,17 +362,165 @@ namespace sio::io_uring {
       exec::io_uring_context& context,
       ::iovec data,
       int fd,
-      ::off_t offset = 0) noexcept
+      ::off_t offset = -1) noexcept
       : context_{&context}
       , buffers_{data}
       , fd_{fd}
       , offset_{offset} {
     }
 
-    template <class Receiver>
+    template <stdexec::receiver_of<completion_signatures> Receiver>
     write_operation<Receiver> connect(stdexec::connect_t, Receiver rcvr) const noexcept {
       return write_operation<Receiver>{
         std::in_place, *context_, buffers_, fd_, offset_, static_cast<Receiver&&>(rcvr)};
+    }
+  };
+
+  template <class Sender, class Receiver>
+  struct buffered_sequence_op;
+
+  template <class Sender, class ItemReceiver, class Receiver>
+  struct buffered_item_op_base {
+    buffered_sequence_op<Sender, Receiver>* parent_op_;
+    [[no_unique_address]] ItemReceiver item_receiver_;
+  };
+
+  std::size_t
+    advance_buffers(std::variant<::iovec, std::span<::iovec>>& buffers, std::size_t n) noexcept;
+
+  template <class Sender, class ItemReceiver, class Receiver>
+  struct buffered_item_receiver {
+    buffered_item_op_base<Sender, ItemReceiver, Receiver>* op_;
+
+    stdexec::env_of_t<ItemReceiver> get_env(stdexec::get_env_t) const noexcept {
+      return stdexec::get_env(op_->item_receiver_);
+    }
+
+    void set_value(stdexec::set_value_t, std::size_t n) && noexcept {
+      advance_buffers(op_->parent_op_->sender_.buffers_, n);
+      stdexec::set_value(static_cast<ItemReceiver&&>(op_->item_receiver_), n);
+    }
+
+    void set_error(stdexec::set_error_t, std::error_code ec) && noexcept {
+      stdexec::set_error(static_cast<ItemReceiver&&>(op_->item_receiver_), ec);
+    }
+
+    void set_stopped(stdexec::set_stopped_t) && noexcept {
+      stdexec::set_stopped(static_cast<ItemReceiver&&>(op_->item_receiver_));
+    }
+  };
+
+  template <class Sender, class ItemReceiver, class Receiver>
+  struct buffered_item_op : buffered_item_op_base<Sender, ItemReceiver, Receiver> {
+    stdexec::connect_result_t<Sender, buffered_item_receiver<Sender, ItemReceiver, Receiver>> op_;
+
+    buffered_item_op(
+      buffered_sequence_op<Sender, Receiver>* parent_op,
+      const Sender& sender,
+      ItemReceiver item_receiver)
+      : buffered_item_op_base<
+        Sender,
+        ItemReceiver,
+        Receiver>{parent_op, static_cast<ItemReceiver&&>(item_receiver)}
+      , op_{
+          stdexec::connect(sender, buffered_item_receiver<Sender, ItemReceiver, Receiver>{this})} {
+    }
+
+    void start(stdexec::start_t) noexcept {
+      stdexec::start(op_);
+    }
+  };
+
+  template <class Sender, class Receiver>
+  struct buffered_item {
+    using is_sender = void;
+
+    using completion_signatures = stdexec::completion_signatures_of_t<Sender>;
+
+    buffered_sequence_op<Sender, Receiver>* parent_op_;
+
+    template <stdexec::receiver ItemReceiver>
+      requires stdexec::sender_to<Sender, buffered_item_receiver<Sender, ItemReceiver, Receiver>>
+    buffered_item_op<Sender, ItemReceiver, Receiver>
+      connect(stdexec::connect_t, ItemReceiver item_receiver) const noexcept {
+      return buffered_item_op<Sender, ItemReceiver, Receiver>{
+        parent_op_, parent_op_->sender_, static_cast<ItemReceiver&&>(item_receiver)};
+    }
+  };
+
+  template <class Sender, class Receiver>
+  struct buffered_next_receiver {
+    using is_receiver = void;
+
+    buffered_sequence_op<Sender, Receiver>* op_;
+
+    void set_value(stdexec::set_value_t) && noexcept {
+      try {
+        stdexec::start(op_->connect_next());
+      } catch (...) {
+        stdexec::set_error(static_cast<Receiver&&>(op_->receiver_), std::current_exception());
+      }
+    }
+
+    void set_stopped(stdexec::set_stopped_t) && noexcept {
+      stdexec::set_stopped(static_cast<Receiver&&>(op_->receiver_));
+    }
+
+    stdexec::env_of_t<Receiver> get_env(stdexec::get_env_t) const noexcept {
+      return stdexec::get_env(op_->receiver_);
+    }
+  };
+
+  template <class Sender, class Receiver>
+  struct buffered_sequence_op {
+    Receiver receiver_;
+    Sender sender_;
+    std::optional<stdexec::connect_result_t<
+      exec::next_sender_of_t<Receiver, buffered_item<Sender, Receiver>>,
+      buffered_next_receiver<Sender, Receiver>>>
+      next_op_;
+
+    explicit buffered_sequence_op(Receiver receiver, Sender sndr)
+      : receiver_(static_cast<Receiver&&>(receiver))
+      , sender_(sndr) {
+      connect_next();
+    }
+
+    decltype(auto) connect_next() {
+      return next_op_.emplace(stdexec::__conv{[this] {
+        return stdexec::connect(
+          exec::set_next(receiver_, buffered_item<Sender, Receiver>{this}),
+          buffered_next_receiver<Sender, Receiver>{this});
+      }});
+    }
+
+    void start(stdexec::start_t) noexcept {
+      stdexec::start(*next_op_);
+    }
+  };
+
+  template <class Sender>
+  struct buffered_sequence {
+    using is_sender = exec::sequence_tag;
+
+    Sender sender_;
+
+    using completion_signatures = stdexec::completion_signatures<
+      stdexec::set_value_t(std::size_t),
+      stdexec::set_error_t(std::error_code),
+      stdexec::set_error_t(std::exception_ptr),
+      stdexec::set_stopped_t()>;
+
+    template <exec::sequence_receiver_of<completion_signatures> Receiver>
+    buffered_sequence_op<Sender, Receiver> subscribe(exec::subscribe_t, Receiver rcvr) const
+      noexcept(nothrow_move_constructible<Receiver>) {
+      return buffered_sequence_op<Sender, Receiver>{static_cast<Receiver&&>(rcvr), sender_};
+    }
+
+    auto get_sequence_env(exec::get_sequence_env_t) const noexcept {
+      return exec::make_env(
+        exec::with(exec::parallelism, exec::lock_step),
+        exec::with(exec::cardinality, std::integral_constant<std::size_t, 1>{}));
     }
   };
 
@@ -392,20 +535,36 @@ namespace sio::io_uring {
       : native_fd_handle{fd} {
     }
 
-    write_sender write(async::write_t, const_buffers_type data) const noexcept {
-      std::span<const ::iovec> buffers{std::bit_cast<const ::iovec*>(data.data()), data.size()};
+    write_sender write_some(async::write_some_t, const_buffers_type data) const noexcept {
+      std::span<::iovec> buffers{reinterpret_cast<::iovec*>(data.data()), data.size()};
       return write_sender(*this->context_, buffers, this->fd_);
     }
 
-    write_sender write(async::write_t, const_buffer_type data) const noexcept {
+    write_sender write_some(async::write_some_t, const_buffer_type data) const noexcept {
       ::iovec buffer = {
         .iov_base = const_cast<void*>(static_cast<const void*>(data.data())),
         .iov_len = data.size()};
       return write_sender(*this->context_, buffer, this->fd_);
     }
 
+    buffered_sequence<write_sender> write(async::write_t, const_buffers_type data) const noexcept {
+      return buffered_sequence<write_sender>{write_some(async::write_some, data)};
+    }
+
+    buffered_sequence<write_sender> write(async::write_t, const_buffer_type data) const noexcept {
+      return buffered_sequence<write_sender>{write_some(async::write_some, data)};
+    }
+
+    // buffered_sequence<read_sender> read(async::read_t, buffers_type data) const noexcept {
+    //   return buffered_sequence<read_sender>{read_some(async::read_some, data)};
+    // }
+
+    // buffered_sequence<read_sender> read(async::read_t, buffer_type data) const noexcept {
+    //   return buffered_sequence<read_sender>{read_some(async::read_some, data)};
+    // }
+
     read_sender read(async::read_t, buffers_type data) const noexcept {
-      std::span<::iovec> buffers{std::bit_cast<::iovec*>(data.data()), data.size()};
+      std::span<::iovec> buffers{reinterpret_cast<::iovec*>(data.data()), data.size()};
       return read_sender(*this->context_, buffers, this->fd_);
     }
 
@@ -425,18 +584,31 @@ namespace sio::io_uring {
     using byte_stream::byte_stream;
 
     using byte_stream::read;
+    using byte_stream::write_some;
     using byte_stream::write;
 
-    write_sender write(async::write_t, const_buffers_type data, extent_type offset) const noexcept {
-      std::span<const ::iovec> buffers{std::bit_cast<const ::iovec*>(data.data()), data.size()};
+    write_sender
+      write_some(async::write_some_t, const_buffers_type data, extent_type offset) const noexcept {
+      std::span<::iovec> buffers{reinterpret_cast<::iovec*>(data.data()), data.size()};
       return write_sender{*this->context_, buffers, this->fd_, offset};
     }
 
-    write_sender write(async::write_t, const_buffer_type data, extent_type offset) const noexcept {
+    write_sender
+      write_some(async::write_some_t, const_buffer_type data, extent_type offset) const noexcept {
       ::iovec buffer = {
         .iov_base = const_cast<void*>(static_cast<const void*>(data.data())),
         .iov_len = data.size()};
       return write_sender{*this->context_, buffer, this->fd_, offset};
+    }
+
+    buffered_sequence<write_sender>
+      write(async::write_t, const_buffers_type data, extent_type offset) const noexcept {
+      return buffered_sequence<write_sender>{write_some(async::write_some, data, offset)};
+    }
+
+    buffered_sequence<write_sender>
+      write(async::write_t, const_buffer_type data, extent_type offset) const noexcept {
+      return buffered_sequence<write_sender>{write_some(async::write_some, data, offset)};
     }
 
     read_sender read(async::read_t, buffers_type data, extent_type offset) const noexcept {

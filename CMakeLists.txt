@@ -16,21 +16,22 @@ endif()
 
 find_package(stdexec REQUIRED)
 
-add_library(sio INTERFACE)
+add_library(sio
+  source/sio/io_uring/file_handle.cpp)
 add_library(sio::sio ALIAS sio)
 target_include_directories(sio
-  INTERFACE
+  PUBLIC
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/source>
       $<INSTALL_INTERFACE:include>)
-target_sources(sio INTERFACE
+target_sources(sio PUBLIC
   FILE_SET sio_headers
   TYPE HEADERS
   BASE_DIRS source
   FILES
-    source/sio/net/address.hpp
-    source/sio/net/resolve.hpp
-    source/sio/net/tcp.hpp
-    source/sio/net/udp.hpp
+    source/sio/net/ip/address.hpp
+    source/sio/net/ip/resolve.hpp
+    source/sio/net/ip/tcp.hpp
+    source/sio/net/ip/udp.hpp
     source/sio/sequence/empty_sequence.hpp
     source/sio/sequence/first.hpp
     source/sio/sequence/ignore_all.hpp
@@ -46,8 +47,8 @@ target_sources(sio INTERFACE
     source/sio/deferred.hpp
     source/sio/intrusive_queue.hpp
     source/sio/io_concepts.hpp)
-target_link_libraries(sio INTERFACE STDEXEC::stdexec)
-target_compile_features(sio INTERFACE cxx_std_20)
+target_link_libraries(sio PUBLIC STDEXEC::stdexec)
+target_compile_features(sio PUBLIC cxx_std_20)
 
 if (PROJECT_IS_TOP_LEVEL)
   option(SIO_EXAMPLES "Build examples" ON)

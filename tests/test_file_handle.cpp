@@ -1,4 +1,5 @@
 #include "sio/io_uring/file_handle.hpp"
+#include "sio/sequence/ignore_all.hpp"
 
 #include <exec/task.hpp>
 
@@ -33,6 +34,7 @@ task<void> no_op_file(sio::io_uring::seekable_byte_stream input) {
   CHECK(input.get() > 0);
   std::byte buffer[8]{};
   std::size_t nbytes = co_await sio::async::read(input, buffer, 0);
+  co_await sio::ignore_all(sio::async::write(input, buffer));
   CHECK(nbytes == 0);
   co_return;
 }
