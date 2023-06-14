@@ -34,7 +34,6 @@ task<void> no_op_file(sio::io_uring::seekable_byte_stream input) {
   CHECK(input.get() > 0);
   std::byte buffer[8]{};
   std::size_t nbytes = co_await sio::async::read_some(input, buffer, 0);
-  co_await sio::ignore_all(sio::async::write(input, buffer));
   CHECK(nbytes == 0);
   co_return;
 }
@@ -50,8 +49,7 @@ TEST_CASE("file_handle - Open a path", "[file_handle]") {
   sio::io_uring::io_scheduler scheduler{&context};
   sync_wait(
     context,
-    sio::async::use_resources(
-      no_op_path, sio::defer(sio::async::path, scheduler, "/dev/null")));
+    sio::async::use_resources(no_op_path, sio::defer(sio::async::path, scheduler, "/dev/null")));
 }
 
 TEST_CASE("file_handle - Open a file to /dev/null", "[file_handle]") {
