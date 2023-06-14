@@ -63,15 +63,15 @@ namespace exec {
 
     struct sequence_receiver_stops_item_t {
       template <class Env>
-        requires(!tag_invocable<parallelism_t, const Env&>)
+        requires(!tag_invocable<sequence_receiver_stops_item_t, const Env&>)
       constexpr std::false_type operator()(const Env&) const noexcept {
         return {};
       }
 
       template <class Env>
-        requires tag_invocable<parallelism_t, const Env&>
-      constexpr tag_invoke_result_t<parallelism_t, const Env&> operator()(const Env& env) const
-        noexcept(nothrow_tag_invocable<parallelism_t, const Env&>) {
+        requires tag_invocable<sequence_receiver_stops_item_t, const Env&>
+      constexpr tag_invoke_result_t<sequence_receiver_stops_item_t, const Env&> operator()(const Env& env) const
+        noexcept(nothrow_tag_invocable<sequence_receiver_stops_item_t, const Env&>) {
         return tag_invoke(*this, env);
       }
     };
