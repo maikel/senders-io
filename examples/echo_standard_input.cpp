@@ -1,4 +1,5 @@
 #include <sio/io_uring/file_handle.hpp>
+#include <sio/sequence/reduce.hpp>
 
 #include <exec/task.hpp>
 
@@ -19,10 +20,8 @@ std::span<const std::byte> as_bytes(const char (&array)[N]) {
 template <std::size_t N>
 std::span<std::byte> as_bytes(char (&array)[N]) {
   std::span<char> span(array);
-  return std::span<std::byte>(
-    reinterpret_cast<std::byte*>(span.data()), span.size_bytes());
+  return std::span<std::byte>(reinterpret_cast<std::byte*>(span.data()), span.size_bytes());
 }
-
 
 task<void> write_all(sio::async::writable_byte_stream auto out, std::span<const std::byte> buffer) {
   while (!buffer.empty()) {
@@ -31,13 +30,19 @@ task<void> write_all(sio::async::writable_byte_stream auto out, std::span<const 
   }
 }
 
-task<void> echo(sio::async::readable_byte_stream auto in, sio::async::writable_byte_stream auto out) {
-  char buffer[64] = {};
-  std::size_t nbytes = co_await sio::async::read(in, as_bytes(buffer));
-  while (nbytes) {
-    co_await write_all(out, as_bytes(buffer).subspan(0, nbytes));
-    nbytes = co_await sio::async::read(in, as_bytes(buffer));
-  }
+task<void>
+  echo(sio::async::readable_byte_stream auto in, sio::async::writable_byte_stream auto out) {
+  // char buffer[64] = {};
+  // std::size_t nbytes = co_await sio::async::read_some(in, as_bytes(buffer));
+  // while (nbytes) {
+  //   auto written_bytes = co_await sio::reduce(
+  //     // sio::async::write(out, as_bytes(buffer).subspan(0, nbytes)), std::size_t{});
+  //   if (written_bytes != nbytes) {
+  //     std::cerr << "Failed to write all bytes" << std::endl;
+  //     co_return;
+  //   }
+  //   nbytes = co_await sio::async::read_some(in, as_bytes(buffer));
+  // }
   co_return;
 }
 

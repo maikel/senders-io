@@ -33,7 +33,7 @@ task<void> no_op_path(sio::io_uring::path_handle handle) {
 task<void> no_op_file(sio::io_uring::seekable_byte_stream input) {
   CHECK(input.get() > 0);
   std::byte buffer[8]{};
-  std::size_t nbytes = co_await sio::async::read(input, buffer, 0);
+  std::size_t nbytes = co_await sio::async::read_some(input, buffer, 0);
   co_await sio::ignore_all(sio::async::write(input, buffer));
   CHECK(nbytes == 0);
   co_return;

@@ -60,6 +60,21 @@ namespace exec {
         return tag_invoke(*this, env);
       }
     };
+
+    struct sequence_receiver_stops_item_t {
+      template <class Env>
+        requires(!tag_invocable<parallelism_t, const Env&>)
+      constexpr std::false_type operator()(const Env&) const noexcept {
+        return {};
+      }
+
+      template <class Env>
+        requires tag_invocable<parallelism_t, const Env&>
+      constexpr tag_invoke_result_t<parallelism_t, const Env&> operator()(const Env& env) const
+        noexcept(nothrow_tag_invocable<parallelism_t, const Env&>) {
+        return tag_invoke(*this, env);
+      }
+    };
   }
 
   using sequence_queries::cardinality_t;
@@ -67,6 +82,9 @@ namespace exec {
 
   using sequence_queries::parallelism_t;
   inline constexpr parallelism_t parallelism;
+
+  using sequence_queries::sequence_receiver_stops_item_t;
+  inline constexpr sequence_receiver_stops_item_t sequence_receiver_stops_item;
 
   using sequence_queries::unbounded_t;
   using sequence_queries::unbounded;

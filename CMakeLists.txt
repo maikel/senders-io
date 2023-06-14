@@ -17,6 +17,7 @@ endif()
 find_package(stdexec REQUIRED)
 
 add_library(sio
+  source/sio/io_uring/buffered_sequence.cpp
   source/sio/io_uring/file_handle.cpp)
 add_library(sio::sio ALIAS sio)
 target_include_directories(sio
@@ -36,11 +37,15 @@ target_sources(sio PUBLIC
     source/sio/sequence/first.hpp
     source/sio/sequence/ignore_all.hpp
     source/sio/sequence/iterate.hpp
+    source/sio/sequence/last.hpp
     source/sio/sequence/merge_each.hpp
+    source/sio/sequence/reduce.hpp
+    source/sio/sequence/scan.hpp
     source/sio/sequence/sequence_concepts.hpp
     source/sio/sequence/then_each.hpp
     source/sio/sequence/transform_each.hpp
     source/sio/sequence/zip.hpp
+    source/sio/io_uring/buffered_sequence.hpp
     source/sio/io_uring/file_handle.hpp
     source/sio/async_resource.hpp
     source/sio/concepts.hpp
