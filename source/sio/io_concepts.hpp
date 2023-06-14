@@ -138,6 +138,55 @@ namespace sio { namespace async {
     resource_token_of_t<call_result_t<path_t, Factory, std::filesystem::path>>;
 
   namespace byte_stream_ {
+    struct read_some_t;
+  }
+
+  extern const byte_stream_::read_some_t read_some;
+
+  namespace byte_stream_ {
+    template <class Handle, class... Args>
+    concept has_read_some_member_function = requires(const Handle& handle, Args&&... args) {
+      handle.read_some(read_some, static_cast<Args&&>(args)...);
+    };
+
+    template <class Handle, class... Args>
+    concept nothrow_read_some_member_function = requires(const Handle& handle, Args&&... args) {
+      { handle.read_some(read_some, static_cast<Args&&>(args)...) } noexcept;
+    };
+
+    template <class Handle, class... Args>
+    concept has_static_read_some_member_function = requires(const Handle& handle, Args&&... args) {
+      Handle::read_some(handle, read_some, static_cast<Args&&>(args)...);
+    };
+
+    template <class Handle, class... Args>
+    concept nothrow_static_read_some_member_function = requires(const Handle& handle, Args&&... args) {
+      { Handle::read_some(handle, read_some, static_cast<Args&&>(args)...) } noexcept;
+    };
+
+    template <class Handle, class... Args>
+    concept has_read_some_customization =
+      has_read_some_member_function<Handle, Args...> || has_static_read_some_member_function<Handle, Args...>;
+
+    template <class Handle, class... Args>
+    concept nothrow_read_some_customization = nothrow_read_some_member_function<Handle, Args...>
+                                      || nothrow_static_read_some_member_function<Handle, Args...>;
+
+    struct read_some_t {
+      template <class Handle, class... Args>
+        requires has_read_some_customization<Handle, Args...>
+      auto operator()(const Handle& handle, Args&&... args) const
+        noexcept(nothrow_read_some_customization<Handle, Args...>) {
+        if constexpr (has_read_some_member_function<Handle, Args...>) {
+          return handle.read_some(read_some, static_cast<Args&&>(args)...);
+        } else {
+          return Handle::read_some(handle, read_some, static_cast<Args&&>(args)...);
+        }
+      }
+    };
+  }
+
+  namespace byte_stream_ {
     struct read_t;
   }
 
@@ -290,9 +339,11 @@ namespace sio { namespace async {
     };
   } // namespace byte_stream_
 
+  using byte_stream_::read_some_t;
   using byte_stream_::read_t;
   using byte_stream_::write_some_t;
   using byte_stream_::write_t;
+  inline constexpr read_some_t read_some;
   inline constexpr read_t read;
   inline constexpr write_some_t write_some;
   inline constexpr write_t write;
@@ -327,7 +378,7 @@ namespace sio { namespace async {
   concept readable_byte_stream =
     with_buffer_typedefs<ByteStream>
     && requires(ByteStream stream, buffers_type_of_t<ByteStream> buffers) {
-         { async::read(stream, buffers) } -> single_value_sender<std::size_t>;
+         { async::read_some(stream, buffers) } -> single_value_sender<std::size_t>;
        };
 
   template <class ByteStream>
@@ -352,7 +403,7 @@ namespace sio { namespace async {
       buffers_type_of_t<ByteStream> buffers,
       const_buffers_type_of_t<ByteStream> const_buffers,
       offset_type_of_t<ByteStream> offset) {
-      { async::read(stream, buffers, offset) } -> single_value_sender<std::size_t>;
+      { async::read_some(stream, buffers, offset) } -> single_value_sender<std::size_t>;
       { async::write_some(stream, const_buffers, offset) } -> single_value_sender<std::size_t>;
     };
 

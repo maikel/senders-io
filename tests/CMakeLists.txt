@@ -17,6 +17,7 @@ add_executable(test_sio
   sequence/test_first.cpp
   sequence/test_ignore_all.cpp
   sequence/test_iterate.cpp
+  sequence/test_last.cpp
   sequence/test_merge_each.cpp
   sequence/test_transform_each.cpp
   sequence/test_zip.cpp
