@@ -523,7 +523,7 @@ namespace sio {
         typename traits<Receiver, Senders...>::result_tuple,
         typename traits<Receiver, Senders...>::errors_variant>;
 
-      typename traits<Receiver, Senders...>::op_states_tuple<> op_states_;
+      typename traits<Receiver, Senders...>::template op_states_tuple<> op_states_;
 
       template <class SenderTuple, std::size_t... Is>
       operation(Receiver rcvr, SenderTuple&& sndr, std::index_sequence<Is...>)

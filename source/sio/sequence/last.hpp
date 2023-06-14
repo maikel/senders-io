@@ -93,7 +93,7 @@ namespace sio {
       item_operation_base<ItemReceiver, ResultVariant, IsLockStep>* op_;
 
       template <class Tag, class... Args>
-        requires emplaceable<ResultVariant, __decayed_tuple<Args...>, Args...>
+        requires emplaceable<ResultVariant, __decayed_tuple<Tag, Args...>, Tag, Args...>
       void set_value(set_value_t, Tag, Args&&... args) && noexcept {
         op_->result_->emplace(Tag{}, static_cast<Args&&>(args)...);
         if constexpr (same_as<Tag, set_value_t>) {
@@ -104,7 +104,8 @@ namespace sio {
       }
 
       auto get_env(get_env_t) const noexcept {
-        auto with_never_stop_token = exec::sequence_receiver_stops_item(stdexec::get_env(op_->receiver_));
+        auto with_never_stop_token = exec::sequence_receiver_stops_item(
+          stdexec::get_env(op_->receiver_));
         if constexpr (same_as<decltype(with_never_stop_token), std::true_type>) {
           return exec::make_env(
             stdexec::get_env(op_->receiver_),
@@ -158,8 +159,7 @@ namespace sio {
 
     template <class Sender, class ResultVariant, bool IsLockStep>
     auto make_item_sender(Sender&& sndr, result_type<ResultVariant, IsLockStep>* parent) noexcept(
-      nothrow_connectable<Sender, item_sender<decay_t<Sender>, ResultVariant, IsLockStep>>)
-      -> item_sender<decay_t<Sender>, ResultVariant, IsLockStep> {
+      nothrow_decay_copyable<Sender>) -> item_sender<decay_t<Sender>, ResultVariant, IsLockStep> {
       return {static_cast<Sender&&>(sndr), parent};
     }
 
@@ -242,6 +242,8 @@ namespace sio {
 
     template <class Sequence>
     struct sender {
+      using is_sender = void;
+
       template <class Self, class Receiver>
       using operation_t = operation<__copy_cvref_t<Self, Sequence>, Receiver>;
 
