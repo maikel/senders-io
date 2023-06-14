@@ -1,3 +1,18 @@
+/*
+ * Copyright (c) 2023 Maikel Nadolski
+ *
+ * Licensed under the Apache License Version 2.0 with LLVM Exceptions
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *   https://llvm.org/LICENSE.txt
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 #pragma once
 
 #include "../concepts.hpp"
@@ -22,6 +37,8 @@ namespace sio {
 
   std::size_t
     advance_buffers(std::variant<::iovec, std::span<::iovec>>& buffers, std::size_t n) noexcept;
+
+  bool buffers_is_empty(std::variant<::iovec, std::span<::iovec>> buffers) noexcept;
 
   template <class Sender, class ItemReceiver, class Receiver>
   struct buffered_item_receiver {
@@ -90,6 +107,10 @@ namespace sio {
     buffered_sequence_op<Sender, Receiver>* op_;
 
     void set_value(stdexec::set_value_t) && noexcept {
+      if (buffers_is_empty(op_->sender_.buffers_)) {
+        stdexec::set_value(static_cast<Receiver&&>(op_->receiver_));
+        return;
+      }
       try {
         stdexec::start(op_->connect_next());
       } catch (...) {
@@ -98,7 +119,7 @@ namespace sio {
     }
 
     void set_stopped(stdexec::set_stopped_t) && noexcept {
-      stdexec::set_stopped(static_cast<Receiver&&>(op_->receiver_));
+      exec::set_value_unless_stopped(static_cast<Receiver&&>(op_->receiver_));
     }
 
     exec::make_env_t<
@@ -161,4 +182,7 @@ namespace sio {
       return exec::make_env(exec::with(exec::parallelism, exec::lock_step));
     }
   };
+
+  template <class Sender>
+  buffered_sequence(Sender) -> buffered_sequence<Sender>;
 }

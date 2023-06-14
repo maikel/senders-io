@@ -32,17 +32,16 @@ task<void> write_all(sio::async::writable_byte_stream auto out, std::span<const 
 
 task<void>
   echo(sio::async::readable_byte_stream auto in, sio::async::writable_byte_stream auto out) {
-  // char buffer[64] = {};
-  // std::size_t nbytes = co_await sio::async::read_some(in, as_bytes(buffer));
-  // while (nbytes) {
-  //   auto written_bytes = co_await sio::reduce(
-  //     // sio::async::write(out, as_bytes(buffer).subspan(0, nbytes)), std::size_t{});
-  //   if (written_bytes != nbytes) {
-  //     std::cerr << "Failed to write all bytes" << std::endl;
-  //     co_return;
-  //   }
-  //   nbytes = co_await sio::async::read_some(in, as_bytes(buffer));
-  // }
+  char buffer[64] = {};
+  std::size_t nbytes = co_await sio::async::read_some(in, as_bytes(buffer));
+  while (nbytes) {
+    auto written_bytes = co_await sio::async::write(out, as_bytes(buffer).subspan(0, nbytes));
+    if (written_bytes != nbytes) {
+      std::cerr << "Failed to write all bytes" << std::endl;
+      co_return;
+    }
+    nbytes = co_await sio::async::read_some(in, as_bytes(buffer));
+  }
   co_return;
 }
 

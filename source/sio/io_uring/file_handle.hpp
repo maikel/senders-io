@@ -19,6 +19,7 @@
 #include "../io_concepts.hpp"
 
 #include "./buffered_sequence.hpp"
+#include "../sequence/reduce.hpp"
 
 #include "exec/linux/io_uring_context.hpp"
 
@@ -48,7 +49,7 @@ namespace sio::io_uring {
     static constexpr std::false_type ready() noexcept {
       return {};
     }
-    
+
     void submit(::io_uring_sqe& sqe) const noexcept;
   };
 
@@ -146,8 +147,8 @@ namespace sio::io_uring {
 
   template <class Receiver>
   struct open_operation_base
-  : stoppable_op_base<Receiver> 
-  , open_submission {
+    : stoppable_op_base<Receiver>
+    , open_submission {
 
     open_operation_base(open_data data, exec::io_uring_context& context, Receiver&& receiver)
       : stoppable_op_base<Receiver>{context, static_cast<Receiver&&>(receiver)}
@@ -217,9 +218,9 @@ namespace sio::io_uring {
   };
 
   template <class Receiver>
-  struct read_operation_base 
-  : stoppable_op_base<Receiver> 
-  , read_submission {
+  struct read_operation_base
+    : stoppable_op_base<Receiver>
+    , read_submission {
     read_operation_base(
       exec::io_uring_context& context,
       std::variant<::iovec, std::span<::iovec>> data,
@@ -400,12 +401,12 @@ namespace sio::io_uring {
       return write_sender(*this->context_, buffer, this->fd_);
     }
 
-    buffered_sequence<write_sender> write(async::write_t, const_buffers_type data) const noexcept {
-      return buffered_sequence<write_sender>{write_some(async::write_some, data)};
+    auto write(async::write_t, const_buffers_type data) const noexcept {
+      return reduce(buffered_sequence{write_some(async::write_some, data)}, 0ull);
     }
 
-    buffered_sequence<write_sender> write(async::write_t, const_buffer_type data) const noexcept {
-      return buffered_sequence<write_sender>{write_some(async::write_some, data)};
+    auto write(async::write_t, const_buffer_type data) const noexcept {
+      return reduce(buffered_sequence{write_some(async::write_some, data)}, 0ull);
     }
 
     read_sender read_some(async::read_some_t, buffers_type data) const noexcept {
@@ -418,12 +419,12 @@ namespace sio::io_uring {
       return read_sender(*this->context_, buffer, this->fd_);
     }
 
-    buffered_sequence<read_sender> read(async::read_t, buffers_type data) const noexcept {
-      return buffered_sequence<read_sender>{read_some(async::read_some, data)};
+    auto read(async::read_t, buffers_type data) const noexcept {
+      return reduce(buffered_sequence{read_some(async::read_some, data)}, 0ull);
     }
 
-    buffered_sequence<read_sender> read(async::read_t, buffer_type data) const noexcept {
-      return buffered_sequence<read_sender>{read_some(async::read_some, data)};
+    auto read(async::read_t, buffer_type data) const noexcept {
+      return reduce(buffered_sequence{read_some(async::read_some, data)}, 0ull);
     }
   };
 
@@ -437,6 +438,7 @@ namespace sio::io_uring {
     using byte_stream::byte_stream;
 
     using byte_stream::read_some;
+    using byte_stream::read;
     using byte_stream::write_some;
     using byte_stream::write;
 
@@ -454,7 +456,8 @@ namespace sio::io_uring {
       return write_sender{*this->context_, buffer, this->fd_, offset};
     }
 
-    read_sender read_some(async::read_some_t, buffers_type data, extent_type offset) const noexcept {
+    read_sender
+      read_some(async::read_some_t, buffers_type data, extent_type offset) const noexcept {
       std::span<::iovec> buffers{std::bit_cast<::iovec*>(data.data()), data.size()};
       return read_sender(*this->context_, buffers, this->fd_, offset);
     }
@@ -464,22 +467,20 @@ namespace sio::io_uring {
       return read_sender(*this->context_, buffer, this->fd_, offset);
     }
 
-    buffered_sequence<write_sender>
-      write(async::write_t, const_buffers_type data, extent_type offset) const noexcept {
-      return buffered_sequence<write_sender>{write_some(async::write_some, data, offset)};
+    auto write(async::write_t, const_buffers_type data, extent_type offset) const noexcept {
+      return reduce(buffered_sequence{write_some(async::write_some, data, offset)}, 0ull);
     }
 
-    buffered_sequence<write_sender>
-      write(async::write_t, const_buffer_type data, extent_type offset) const noexcept {
-      return buffered_sequence<write_sender>{write_some(async::write_some, data, offset)};
+    auto write(async::write_t, const_buffer_type data, extent_type offset) const noexcept {
+      return reduce(buffered_sequence{write_some(async::write_some, data, offset)}, 0ull);
     }
 
-    buffered_sequence<read_sender> read(async::read_t, buffers_type data, extent_type offset) const noexcept {
-      return buffered_sequence<read_sender>{read_some(async::read_some, data, offset)};
+    auto read(async::read_t, buffers_type data, extent_type offset) const noexcept {
+      return reduce(buffered_sequence{read_some(async::read_some, data, offset)}, 0ull);
     }
 
-    buffered_sequence<read_sender> read(async::read_t, buffer_type data, extent_type offset) const noexcept {
-      return buffered_sequence<read_sender>{read_some(async::read_some, data, offset)};
+    auto read(async::read_t, buffer_type data, extent_type offset) const noexcept {
+      return reduce(buffered_sequence{read_some(async::read_some, data, offset)}, 0ull);
     }
   };
 
