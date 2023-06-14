@@ -19,6 +19,7 @@ add_executable(test_sio
   sequence/test_iterate.cpp
   sequence/test_last.cpp
   sequence/test_merge_each.cpp
+  sequence/test_scan.cpp
   sequence/test_transform_each.cpp
   sequence/test_zip.cpp
 )

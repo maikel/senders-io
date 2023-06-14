@@ -59,6 +59,8 @@ namespace sio {
 
     template <class ItemReceiver, class Tp, class Fn, bool IsLockStep>
     struct item_receiver {
+      using is_receiver = void;
+
       item_operation_base<ItemReceiver, Tp, Fn, IsLockStep>* op_;
 
       stdexec::env_of_t<ItemReceiver> get_env(stdexec::get_env_t) const noexcept {
@@ -110,6 +112,8 @@ namespace sio {
 
     template <class ItemSender, class Tp, class Fn, bool IsLockStep>
     struct item_sender {
+      using is_sender = void;
+
       ItemSender sndr_;
       scan_data<Tp, Fn, IsLockStep>* data_;
 
@@ -119,7 +123,7 @@ namespace sio {
         return item_operation<copy_cvref_t<Self, ItemSender>, ItemReceiver, Tp, Fn, IsLockStep>{
           static_cast<Self&&>(self).sndr_,
           static_cast<ItemReceiver&&>(rcvr),
-          static_cast<scan_data<Tp, Fn, IsLockStep>&&>(static_cast<Self&&>(self).data_)};
+          static_cast<Self&&>(self).data_};
       }
 
       template <class Self, class Env>
@@ -139,6 +143,8 @@ namespace sio {
 
     template <class Receiver, class Tp, class Fn, bool IsLockStep>
     struct receiver {
+      using is_receiver = void;
+
       operation_base<Receiver, Tp, Fn, IsLockStep>* op_;
 
       stdexec::env_of_t<Receiver> get_env(stdexec::get_env_t) const noexcept {
@@ -146,10 +152,11 @@ namespace sio {
       }
 
       template <class ItemSender>
-      item_sender<decay_t<ItemSender>, Tp, Fn, IsLockStep>
-        set_next(exec::set_next_t, ItemSender&& sndr) {
-        return item_sender<decay_t<ItemSender>, Tp, Fn, IsLockStep>{
-          static_cast<ItemSender&&>(sndr), &op_->data_};
+      auto set_next(exec::set_next_t, ItemSender&& sndr) {
+        return exec::set_next(
+          op_->rcvr_,
+          item_sender<decay_t<ItemSender>, Tp, Fn, IsLockStep>{
+            static_cast<ItemSender&&>(sndr), &op_->data_});
       }
 
       void set_value(stdexec::set_value_t) && noexcept {
@@ -170,8 +177,8 @@ namespace sio {
     struct operation : operation_base<Receiver, Tp, Fn, IsLockStep> {
       exec::subscribe_result_t<Sender, receiver<Receiver, Tp, Fn, IsLockStep>> op_;
 
-      explicit operation(Sender&& sndr, Receiver rcvr, scan_data<Tp, Fn, IsLockStep> data)
-        : operation_base<Receiver, Tp, Fn, IsLockStep>{static_cast<Receiver&&>(rcvr), data}
+      explicit operation(Sender&& sndr, Receiver rcvr, Tp init, Fn fn)
+        : operation_base<Receiver, Tp, Fn, IsLockStep>{static_cast<Receiver&&>(rcvr), scan_data<Tp, Fn, IsLockStep>{static_cast<Tp&&>(init), static_cast<Fn&&>(fn)}}
         , op_{exec::subscribe(
             static_cast<Sender&&>(sndr),
             receiver<Receiver, Tp, Fn, IsLockStep>{this})} {
@@ -184,6 +191,8 @@ namespace sio {
 
     template <class Sender, class Tp, class Fn>
     struct sequence {
+      using is_sender = exec::sequence_tag;
+
       Sender sndr_;
 
       template <class SenderEnv>
@@ -193,29 +202,32 @@ namespace sio {
         std::same_as<parallelism_type<exec::sequence_env_of_t<Sender>>, exec::lock_step_t>;
 
 
-      scan_data<Tp, Fn, IsLockStep> data_;
+      Tp init_;
+      Fn fn_;
 
       explicit sequence(Sender sndr, Tp init, Fn fn)
         : sndr_{static_cast<Sender&&>(sndr)}
-        , data_{static_cast<Tp&&>(init), static_cast<Fn&&>(fn)} {
+        , init_{static_cast<Tp&&>(init)}
+        , fn_{static_cast<Fn&&>(fn)} {
       }
 
       template <decays_to<sequence> Self, stdexec::receiver Receiver>
       static operation<copy_cvref_t<Self, Sender>, Receiver, Tp, Fn, IsLockStep>
-        connect(Self&& self, stdexec::connect_t, Receiver rcvr) {
+        subscribe(Self&& self, exec::subscribe_t, Receiver rcvr) {
         return operation<copy_cvref_t<Self, Sender>, Receiver, Tp, Fn, IsLockStep>{
           static_cast<Self&&>(self).sndr_,
           static_cast<Receiver&&>(rcvr),
-          static_cast<scan_data<Tp, Fn, IsLockStep>&&>(static_cast<Self&&>(self).data_)};
+          static_cast<Self&&>(self).init_,
+          static_cast<Self&&>(self).fn_};
       }
 
-      template <class Self, class Env>
-      static auto get_completion_signatures(Self&&, stdexec::get_completion_signatures_t, Env&&)
-        -> stdexec::make_completion_signatures<
-          copy_cvref_t<Self, Sender>,
+      template <class Env>
+      auto get_completion_signatures(stdexec::get_completion_signatures_t, Env&&) const
+        -> stdexec::__msuccess_or_t<stdexec::__try_make_completion_signatures<
+          Sender,
           Env,
           stdexec::completion_signatures<stdexec::set_error_t(std::exception_ptr)>,
-          stdexec::__mconst<stdexec::completion_signatures<stdexec::set_value_t(Tp)>>::template __f>;
+          stdexec::__mconst<stdexec::completion_signatures<stdexec::set_value_t(Tp)>> >>;
 
       exec::sequence_env_of_t<Sender> get_sequence_env(exec::get_sequence_env_t) const noexcept {
         return exec::get_sequence_env(sndr_);

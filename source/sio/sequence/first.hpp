@@ -73,10 +73,12 @@ namespace sio {
         std::visit(
           [&]<class Tuple>(Tuple&& tuple) noexcept {
             if constexpr (__not_decays_to<Tuple, std::monostate>) {
-              std::apply([&]<class Tag, class... Args>(Tag completion, Args&&... args) noexcept {
-                static_assert(__completion_tag<Tag>);
-                completion(static_cast<Receiver&&>(rcvr), static_cast<Args&&>(args)...);
-              }, static_cast<Tuple&&>(tuple));
+              std::apply(
+                [&]<class Tag, class... Args>(Tag completion, Args&&... args) noexcept {
+                  static_assert(__completion_tag<Tag>);
+                  completion(static_cast<Receiver&&>(rcvr), static_cast<Args&&>(args)...);
+                },
+                static_cast<Tuple&&>(tuple));
             } else {
               stdexec::set_stopped(static_cast<Receiver&&>(rcvr));
             }
@@ -150,8 +152,7 @@ namespace sio {
 
     template <class Sender, class ResultVariant, bool IsLockStep>
     auto make_item_sender(Sender&& sndr, result_type<ResultVariant, IsLockStep>* parent) noexcept(
-      __nothrow_connectable<Sender, item_sender<__decay_t<Sender>, ResultVariant, IsLockStep>>)
-      -> item_sender<__decay_t<Sender>, ResultVariant, IsLockStep> {
+      nothrow_decay_copyable<Sender>) -> item_sender<__decay_t<Sender>, ResultVariant, IsLockStep> {
       return {static_cast<Sender&&>(sndr), parent};
     }
 
@@ -234,6 +235,8 @@ namespace sio {
 
     template <class Sequence>
     struct sender {
+      using is_sender = void;
+
       template <class Self, class Receiver>
       using operation_t = operation<__copy_cvref_t<Self, Sequence>, Receiver>;
 
