@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 #include "sio/net/ip/resolve.hpp"
+#include "sio/net/ip/tcp.hpp"
 #include "sio/sequence/first.hpp"
 
 #include <catch2/catch.hpp>
 
 TEST_CASE("async::resolve - Resolve localhost", "[net][resolve][first]") {
-  auto sndr = sio::first(sio::async::resolve("localhost", "http"));
+  auto sndr = sio::first(sio::async::resolve(sio::net::ip::tcp::v4(), "localhost", "http"));
   auto result = stdexec::sync_wait(sndr);
   CHECK(result);
   auto [response] = result.value();
