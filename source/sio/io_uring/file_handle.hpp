@@ -492,11 +492,11 @@ namespace sio::io_uring {
     }
   };
 
-  struct path {
+  struct path_resource {
     exec::io_uring_context& context_;
     std::filesystem::path path_;
 
-    explicit path(exec::io_uring_context& context, std::filesystem::path path) noexcept
+    explicit path_resource(exec::io_uring_context& context, std::filesystem::path path) noexcept
       : context_{context}
       , path_{static_cast<std::filesystem::path&&>(path)} {
     }
@@ -509,11 +509,11 @@ namespace sio::io_uring {
     }
   };
 
-  struct file {
+  struct file_resource {
     exec::io_uring_context& context_;
     open_data data_;
 
-    explicit file(
+    explicit file_resource(
       exec::io_uring_context& context,
       std::filesystem::path path,
       path_handle base,
@@ -538,15 +538,15 @@ namespace sio::io_uring {
   struct io_scheduler {
     exec::io_uring_context* context_;
 
-    using path_type = sio::io_uring::path;
-    using file_type = sio::io_uring::file;
+    using path_type = sio::io_uring::path_resource;
+    using file_type = sio::io_uring::file_resource;
 
-    path_type path(async::path_t, std::filesystem::path path) const noexcept {
+    path_type open_path(async::open_path_t, std::filesystem::path path) const noexcept {
       return path_type(*context_, static_cast<std::filesystem::path&&>(path));
     }
 
-    file_type file(
-      async::file_t,
+    file_type open_file(
+      async::open_file_t,
       std::filesystem::path path,
       path_handle base,
       async::mode mode,
