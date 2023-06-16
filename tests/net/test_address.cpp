@@ -25,7 +25,7 @@
 
 #include "sio/net/ip/address.hpp"
 
-using namespace sio::net::ip;
+using namespace sio::ip;
 
 // Used for test IPv4 address
 static const std::vector<std::string>

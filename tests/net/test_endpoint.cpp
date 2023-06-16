@@ -25,7 +25,7 @@
 #include "sio/net/ip/address.hpp"
 #include "sio/net/ip/endpoint.hpp"
 
-using namespace sio::net::ip;
+using namespace sio::ip;
 
 TEST_CASE("[construct endpoint with family and port should return any address]", "[endpoint]") {
   endpoint ep_v4{AF_INET, 80};

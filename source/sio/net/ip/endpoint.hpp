@@ -20,54 +20,54 @@
 
 #include "address.hpp"
 
-namespace sio::net::ip {
+namespace sio::ip {
   using port_type = uint_least16_t;
 
   class endpoint {
    public:
     endpoint() = default;
 
-    explicit endpoint(int __family, port_type __port) noexcept {
-      if (__family == AF_INET) {
-        __data_.__v4.sin_family = AF_INET;
-        __data_.__v4.sin_port = ::htons(__port);
-        __data_.__v4.sin_addr.s_addr = INADDR_ANY;
-      } else if (__family == AF_INET6) {
-        __data_.__v6.sin6_family = AF_INET6;
-        __data_.__v6.sin6_port = ::htons(__port);
-        __data_.__v6.sin6_addr = IN6ADDR_ANY_INIT;
+    explicit endpoint(int family, port_type port) noexcept {
+      if (family == AF_INET) {
+        data_.v4.sin_family = AF_INET;
+        data_.v4.sin_port = ::htons(port);
+        data_.v4.sin_addr.s_addr = INADDR_ANY;
+      } else if (family == AF_INET6) {
+        data_.v6.sin6_family = AF_INET6;
+        data_.v6.sin6_port = ::htons(port);
+        data_.v6.sin6_addr = IN6ADDR_ANY_INIT;
       }
     }
 
-    explicit endpoint(net::ip::address __addr, port_type __port) noexcept {
-      if (__addr.is_v4()) {
-        __data_.__v4.sin_family = AF_INET;
-        __data_.__v4.sin_port = ::htons(__port);
-        __data_.__v4.sin_addr = bit_cast<::in_addr>(__addr.to_v4().to_bytes());
+    explicit endpoint(ip::address addr, port_type port) noexcept {
+      if (addr.is_v4()) {
+        data_.v4.sin_family = AF_INET;
+        data_.v4.sin_port = ::htons(port);
+        data_.v4.sin_addr = bit_cast<::in_addr>(addr.to_v4().to_bytes());
       } else {
-        __data_.__v6.sin6_family = AF_INET6;
-        __data_.__v6.sin6_port = ::htons(__port);
-        __data_.__v6.sin6_addr = bit_cast<::in6_addr>(__addr.to_v6().to_bytes());
+        data_.v6.sin6_family = AF_INET6;
+        data_.v6.sin6_port = ::htons(port);
+        data_.v6.sin6_addr = bit_cast<::in6_addr>(addr.to_v6().to_bytes());
       }
     }
 
     bool is_v4() const noexcept {
-      return __data_.__base.sa_family == AF_INET;
+      return data_.base.sa_family == AF_INET;
     }
 
     port_type port() const noexcept {
       if (is_v4()) {
-        return ::ntohs(__data_.__v4.sin_port);
+        return ::ntohs(data_.v4.sin_port);
       } else {
-        return ::ntohs(__data_.__v6.sin6_port);
+        return ::ntohs(data_.v6.sin6_port);
       }
     }
 
-    ::sio::net::ip::address address() const noexcept {
+    ::sio::ip::address address() const noexcept {
       if (is_v4()) {
-        return address_v4{std::bit_cast<address_v4::bytes_type>(__data_.__v4.sin_addr)};
+        return address_v4{std::bit_cast<address_v4::bytes_type>(data_.v4.sin_addr)};
       } else {
-        return address_v6{std::bit_cast<address_v6::bytes_type>(__data_.__v6.sin6_addr)};
+        return address_v6{std::bit_cast<address_v6::bytes_type>(data_.v6.sin6_addr)};
       }
     }
 
@@ -104,20 +104,20 @@ namespace sio::net::ip {
 
    private:
     union {
-      ::sockaddr __base;
-      ::sockaddr_in __v4;
-      ::sockaddr_in6 __v6;
-    } __data_{};
+      ::sockaddr base;
+      ::sockaddr_in v4;
+      ::sockaddr_in6 v6;
+    } data_{};
   };
 }
 
 namespace std {
   template <>
-  struct hash<sio::net::ip::endpoint> {
-    std::size_t operator()(const sio::net::ip::endpoint& __ep) const noexcept {
-      std::size_t __hash1 = std::hash<sio::net::ip::address>()(__ep.address());
-      std::size_t __hash2 = std::hash<sio::net::ip::port_type>()(__ep.port());
-      return __hash1 ^ (__hash2 + 0x9e3779b9 + (__hash1 << 6) + (__hash1 >> 2));
+  struct hash<sio::ip::endpoint> {
+    std::size_t operator()(const sio::ip::endpoint& ep) const noexcept {
+      std::size_t hash1 = std::hash<sio::ip::address>()(ep.address());
+      std::size_t hash2 = std::hash<sio::ip::port_type>()(ep.port());
+      return hash1 ^ (hash2 + 0x9e3779b9 + (hash1 << 6) + (hash1 >> 2));
     }
   };
 

@@ -20,7 +20,7 @@
 #include <catch2/catch.hpp>
 
 TEST_CASE("async::resolve - Resolve ipv4 localhost", "[net][resolve][first]") {
-  auto sndr = sio::first(sio::async::resolve(sio::net::ip::tcp::v4(), "localhost", "http"));
+  auto sndr = sio::first(sio::async::resolve(sio::ip::tcp::v4(), "localhost", "http"));
   auto result = stdexec::sync_wait(sndr);
   CHECK(result);
   auto [response] = result.value();
@@ -30,7 +30,7 @@ TEST_CASE("async::resolve - Resolve ipv4 localhost", "[net][resolve][first]") {
 }
 
 TEST_CASE("async::resolve - Resolve ipv6 localhost", "[net][resolve][first]") {
-  auto sndr = sio::first(sio::async::resolve(sio::net::ip::tcp::v6(), "localhost", "80"));
+  auto sndr = sio::first(sio::async::resolve(sio::ip::tcp::v6(), "localhost", "80"));
   auto result = stdexec::sync_wait(sndr);
   CHECK(result);
   auto [response] = result.value();
