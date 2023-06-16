@@ -2,7 +2,7 @@
  * Copyright (c) 2023 Maikel Nadolski
  *
  * Licensed under the Apache License Version 2.0 with LLVM Exceptions
- * (the "License"); you may not use this open_file except in compliance with
+ * (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
  *
  *   https://llvm.org/LICENSE.txt
