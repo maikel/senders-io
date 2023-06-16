@@ -26,8 +26,10 @@
 #include "./address.hpp"
 #include "./endpoint.hpp"
 
+
 #include "../../assert.hpp"
 #include "../../concepts.hpp"
+#include "../../net_concepts.hpp"
 #include "../../sequence/sequence_concepts.hpp"
 
 #include <cstring>
@@ -108,13 +110,6 @@ namespace sio::ip {
   }
 
   using addrinfo_type = ::addrinfo;
-
-  template <class IP>
-  concept internet_protocol = requires(const IP& proto) {
-    { proto.family() };
-    { proto.type() };
-    { proto.protocol() };
-  };
 
   class resolver_query {
    public:
