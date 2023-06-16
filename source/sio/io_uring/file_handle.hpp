@@ -22,7 +22,8 @@
 #include "../sequence/reduce.hpp"
 
 #include "exec/linux/io_uring_context.hpp"
-#include "sio/net/ip/address.hpp"
+#include "sio/concepts.hpp"
+#include "sio/net/ip/endpoint.hpp"
 
 #include <exception>
 #include <filesystem>
@@ -485,25 +486,22 @@ namespace sio::io_uring {
     }
   };
 
-  struct accept_submission {
-    exec::io_uring_context& context_;
-    int fd_;
-    sockaddr addr_;
-    socklen_t addr_len_;
+  struct acceptor : native_fd_handle {
+    ip::endpoint local_endpoint_;
 
-    accept_submission(
-      exec::io_uring_context& context,
-      int fd,
-      const sockaddr& addr,
-      socklen_t addr_len) noexcept
-      : context_{context}
-      , fd_{fd}
-      , addr_(addr)
-      , addr_len_(addr_len) {
+    acceptor(exec::io_uring_context& context, int fd, const ip::endpoint& local_endpoint) noexcept
+      : native_fd_handle(context, fd)
+      , local_endpoint_(local_endpoint) {
     }
+  };
 
-    exec::io_uring_context& context() const noexcept {
-      return context_;
+  struct accept_submission {
+    int fd_;
+    ip::endpoint local_endpoint_;
+
+    accept_submission(int fd, ip::endpoint local_endpoint) noexcept
+      : fd_{fd}
+      , local_endpoint_(static_cast<ip::endpoint&&>(local_endpoint)) {
     }
 
     static constexpr std::false_type ready() noexcept {
@@ -514,26 +512,30 @@ namespace sio::io_uring {
   };
 
   template <class Receiver>
-  struct accept_operation_base : accept_submission {
-    [[no_unique_address]] Receiver receiver_;
-
+  struct accept_operation_base
+    : stoppable_op_base<Receiver>
+    , accept_submission {
     accept_operation_base(
       exec::io_uring_context& context,
       Receiver receiver,
       int fd,
-      const sockaddr& addr_,
-      socklen_t addr_len_)
-      : accept_submission{context, fd, addr_, addr_len_}
-      , receiver_{static_cast<Receiver&&>(receiver)} {
+      ip::endpoint local_endpoint) noexcept
+      : stoppable_op_base<Receiver>{context, static_cast<Receiver&&>(receiver)}
+      , accept_submission{fd, static_cast<ip::endpoint&&>(local_endpoint)} {
     }
 
     void complete(const ::io_uring_cqe& cqe) noexcept {
       if (cqe.res >= 0) {
-        stdexec::set_value(static_cast<Receiver&&>(receiver_), {context_, cqe.res});
+        stdexec::set_value(
+          static_cast<accept_operation_base&&>(*this).receiver(),
+          byte_stream{
+            native_fd_handle{this->context(), cqe.res}
+        });
       } else {
         SIO_ASSERT(cqe.res < 0);
         stdexec::set_error(
-          static_cast<Receiver&&>(receiver_), std::error_code(-cqe.res, std::system_category()));
+          static_cast<accept_operation_base&&>(*this).receiver(),
+          std::error_code(-cqe.res, std::system_category()));
       }
     }
   };
@@ -542,34 +544,26 @@ namespace sio::io_uring {
   using accept_operation = stoppable_task_facade<accept_operation_base<Receiver>>;
 
   struct accept_sender {
+    using is_sender = void;
+
     using completion_signatures = stdexec::completion_signatures<
-      stdexec::set_value_t(byte_stream),
+      stdexec::set_value_t(byte_stream&&),
       stdexec::set_error_t(std::error_code),
       stdexec::set_stopped_t()>;
 
     exec::io_uring_context* context_;
     int fd_;
-    sockaddr addr_;
-    socklen_t addr_len_;
+    ip::endpoint local_endpoint_;
 
-    template <class Receiver>
-    accept_operation<Receiver> connect(stdexec::connect_t, Receiver rcvr) const noexcept {
+    template <stdexec::receiver_of<completion_signatures> Receiver>
+    accept_operation<Receiver>
+      connect(stdexec::connect_t, Receiver rcvr) noexcept(nothrow_decay_copyable<Receiver>) {
       return accept_operation<Receiver>{
-        std::in_place, *context_, static_cast<Receiver&&>(rcvr), fd_, addr_, addr_len_};
-    }
-  };
-
-  struct acceptor : native_fd_handle {
-    sockaddr addr_;
-    socklen_t addr_len_;
-
-    acceptor(exec::io_uring_context& context, int fd, net::ip::endpoint ep)
-      : native_fd_handle(context, fd) {
-      if (ep.address().is_v4()) {
-        // addr_ = ep.address();
-      } else {
-        // addr_ =
-      }
+        std::in_place,
+        *context_,
+        static_cast<Receiver&&>(rcvr),
+        fd_,
+        static_cast<ip::endpoint&&>(local_endpoint_)};
     }
   };
 

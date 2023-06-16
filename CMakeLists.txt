@@ -48,6 +48,7 @@ target_sources(sio PUBLIC
     source/sio/sequence/zip.hpp
     source/sio/io_uring/buffered_sequence.hpp
     source/sio/io_uring/file_handle.hpp
+    source/sio/io_uring/async_accept.hpp
     source/sio/async_resource.hpp
     source/sio/concepts.hpp
     source/sio/deferred.hpp

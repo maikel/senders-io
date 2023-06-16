@@ -21,13 +21,16 @@
 #include "sio/net/ip/address.hpp"
 
 #include <exec/env.hpp>
+#include <exec/linux/io_uring_context.hpp>
 #include <exec/trampoline_scheduler.hpp>
+#include <sys/socket.h>
 
 namespace sio {
   namespace accept_ {
     using namespace stdexec;
 
     // TODO: with async_allocator
+    // using sender_t = async_allocator(sender_t);
     using sender_t = io_uring::accept_sender;
 
     template <class Receiver>
@@ -36,6 +39,7 @@ namespace sio {
     template <class Receiver>
     struct next_receiver {
       using is_receiver = void;
+
       operation<Receiver>* op_;
 
       void set_value(set_value_t) && noexcept {
@@ -69,22 +73,27 @@ namespace sio {
         std::declval<exec::trampoline_scheduler&>(),
         std::declval<sender_t>()));
 
-      std::optional<
-        connect_result_t< exec::__next_sender_of_t<Receiver, item_sender>, next_receiver<Receiver>>>
-        op_{};
+      // !!!! The commented lines cause compilation errors.
+      // std::optional< connect_result_t<
+      //   exec::__next_sender_of_t<Receiver, item_sender>, //
+      //   next_receiver<Receiver>>>
+      //   op_{};
       exec::trampoline_scheduler scheduler_{};
 
       void start_next() noexcept {
-        try {
-          stdexec::start(op_.emplace(__conv{[&] {
-            return stdexec::connect(
-              exec::set_next(
-                rcvr_, stdexec::on(scheduler_, sender_t{acceptor_.context_, acceptor_.fd_})),
-              next_receiver<Receiver>{this});
-          }}));
-        } catch (...) {
-          stdexec::set_error(static_cast<Receiver&&>(rcvr_), std::current_exception());
-        }
+        // try {
+        //   stdexec::start(op_.emplace(__conv{[&] {
+        //     return stdexec::connect(
+        //       exec::set_next(
+        //         rcvr_,
+        //         stdexec::on(
+        //           scheduler_,
+        //           sender_t{acceptor_.context_, acceptor_.fd_, acceptor_.local_endpoint_})),
+        //       next_receiver<Receiver>{this});
+        //   }}));
+        // } catch (...) {
+        //   stdexec::set_error(static_cast<Receiver&&>(rcvr_), std::current_exception());
+        // }
       }
 
       void start(start_t) noexcept {
@@ -96,16 +105,17 @@ namespace sio {
       using is_sender = exec::sequence_tag;
 
       using completion_signatures = stdexec::completion_signatures<
-        set_value_t(io_uring::byte_stream),
+        set_value_t(sio::io_uring::byte_stream&&),
         set_error_t(std::exception_ptr),
         set_stopped_t()>;
 
       io_uring::acceptor& acceptor_;
 
+      // !!!! The commented lines cause compilation errors.
       template <
         __decays_to<sequence> Self,
         exec::sequence_receiver_of<completion_signatures> Receiver>
-        requires sender_to< exec::__next_sender_of_t<Receiver, sender_t>, next_receiver<Receiver>>
+      // requires sender_to< exec::__next_sender_of_t<Receiver, sender_t>, next_receiver<Receiver>>
       static operation<Receiver> subscribe(Self&& self, exec::subscribe_t, Receiver rcvr) //
         noexcept(nothrow_decay_copyable<Receiver>) {
         return {static_cast<Receiver&&>(rcvr), self.acceptor_};

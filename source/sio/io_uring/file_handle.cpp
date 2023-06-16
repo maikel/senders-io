@@ -43,8 +43,8 @@ namespace sio::io_uring {
     ::io_uring_sqe sqe_{};
     sqe_.opcode = IORING_OP_ACCEPT;
     sqe_.fd = fd_;
-    sqe.addr = reinterpret_cast<__u64>(&addr_);
-    sqe.addr2 = addr_len_;
+    sqe.addr = reinterpret_cast<__u64>(local_endpoint_.data());
+    sqe.addr2 = local_endpoint_.size();
     sqe = sqe_;
   }
 
