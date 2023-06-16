@@ -16,7 +16,6 @@
 #include "./file_handle.hpp"
 
 namespace sio::io_uring {
-
   void close_submission::submit(::io_uring_sqe& sqe) const noexcept {
     ::io_uring_sqe sqe_{};
     sqe_.opcode = IORING_OP_CLOSE;
@@ -37,6 +36,15 @@ namespace sio::io_uring {
     sqe_.fd = data_.dirfd_;
     sqe_.open_flags = data_.flags_;
     sqe_.len = data_.mode_;
+    sqe = sqe_;
+  }
+
+  void accept_submission::submit(::io_uring_sqe& sqe) const noexcept {
+    ::io_uring_sqe sqe_{};
+    sqe_.opcode = IORING_OP_ACCEPT;
+    sqe_.fd = fd_;
+    sqe.addr = reinterpret_cast<__u64>(&addr_);
+    sqe.addr2 = addr_len_;
     sqe = sqe_;
   }
 
