@@ -19,7 +19,7 @@
 
 #include <catch2/catch.hpp>
 
-TEST_CASE("async::resolve - Resolve localhost", "[net][resolve][first]") {
+TEST_CASE("async::resolve - Resolve ipv4 localhost", "[net][resolve][first]") {
   auto sndr = sio::first(sio::async::resolve(sio::net::ip::tcp::v4(), "localhost", "http"));
   auto result = stdexec::sync_wait(sndr);
   CHECK(result);
@@ -27,4 +27,14 @@ TEST_CASE("async::resolve - Resolve localhost", "[net][resolve][first]") {
   CHECK(response.endpoint().address().is_v4());
   std::string str = response.endpoint().address().to_string();
   CHECK(str == "127.0.0.1");
+}
+
+TEST_CASE("async::resolve - Resolve ipv6 localhost", "[net][resolve][first]") {
+  auto sndr = sio::first(sio::async::resolve(sio::net::ip::tcp::v6(), "localhost", "80"));
+  auto result = stdexec::sync_wait(sndr);
+  CHECK(result);
+  auto [response] = result.value();
+  CHECK(response.endpoint().address().is_v6());
+  std::string str = response.endpoint().address().to_string();
+  CHECK(str == "::1");
 }
