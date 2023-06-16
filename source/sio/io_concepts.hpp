@@ -2,7 +2,7 @@
  * Copyright (c) 2023 Maikel Nadolski
  *
  * Licensed under the Apache License Version 2.0 with LLVM Exceptions
- * (the "License"); you may not use this file except in compliance with
+ * (the "License"); you may not use this open_file except in compliance with
  * the License. You may obtain a copy of the License at
  *
  *   https://llvm.org/LICENSE.txt
@@ -53,7 +53,7 @@ namespace sio { namespace async {
     temporary = 8
   };
 
-  // namespace file {
+  // namespace open_file {
   //   enum class flag : unsigned char {
   //     unlink_on_first_close = 0,
   //     disable_safety_barriers,
@@ -78,31 +78,31 @@ namespace sio { namespace async {
     stdexec::__single_typed_sender<Sender, Env> && //
     std::same_as<Tp, stdexec::__single_sender_value_t<Sender, Env>>;
 
-  namespace path_ {
-    struct path_t;
+  namespace open_path_ {
+    struct open_path_t;
   }
 
-  extern const path_::path_t path;
+  extern const open_path_::open_path_t open_path;
 
-  namespace path_ {
+  namespace open_path_ {
     template <class Factory, class... Args>
     concept has_path_member_customization = requires(Factory factory, Args&&... args) {
-      factory.path(path, static_cast<Args&&>(args)...);
+      factory.open_path(open_path, static_cast<Args&&>(args)...);
     };
 
     template <class Factory, class... Args>
     concept nothrow_path_member_customization = requires(Factory factory, Args&&... args) {
-      { factory.path(path, static_cast<Args&&>(args)...) } noexcept;
+      { factory.open_path(open_path, static_cast<Args&&>(args)...) } noexcept;
     };
 
     template <class Factory, class... Args>
     concept has_path_static_member_customization = requires(Factory factory, Args&&... args) {
-      Factory::path(factory, path, static_cast<Args&&>(args)...);
+      Factory::open_path(factory, open_path, static_cast<Args&&>(args)...);
     };
 
     template <class Factory, class... Args>
     concept nothrow_path_static_member_customization = requires(Factory factory, Args&&... args) {
-      { Factory::path(factory, path, static_cast<Args&&>(args)...) } noexcept;
+      { Factory::open_path(factory, open_path, static_cast<Args&&>(args)...) } noexcept;
     };
 
     template <class Factory, class... Args>
@@ -113,29 +113,29 @@ namespace sio { namespace async {
     concept nothrow_path_customization = nothrow_path_member_customization<Factory, Args...>
                                       || nothrow_path_static_member_customization<Factory, Args...>;
 
-    struct path_t {
+    struct open_path_t {
       template <class Factory, class... Args>
         requires has_path_customization<Factory, Args...>
       auto operator()(const Factory& factory, Args&&... args) const
         noexcept(nothrow_path_customization<Factory, Args...>) {
         if constexpr (has_path_member_customization<Factory, Args...>) {
-          return factory.path(path, static_cast<Args&&>(args)...);
+          return factory.open_path(open_path, static_cast<Args&&>(args)...);
         } else {
-          return Factory::path(factory, path, static_cast<Args&&>(args)...);
+          return Factory::open_path(factory, open_path, static_cast<Args&&>(args)...);
         }
       }
     };
   }
 
-  using path_t = path_::path_t;
-  inline constexpr path_t path{};
+  using open_path_t = open_path_::open_path_t;
+  inline constexpr open_path_t open_path{};
 
   template <class Factory>
-  concept path_factory = callable<path_t, Factory, std::filesystem::path>;
+  concept path_factory = callable<open_path_t, Factory, std::filesystem::path>;
 
   template <path_factory Factory>
   using path_handle_of_t =
-    resource_token_of_t<call_result_t<path_t, Factory, std::filesystem::path>>;
+    resource_token_of_t<call_result_t<open_path_t, Factory, std::filesystem::path>>;
 
   namespace byte_stream_ {
     struct read_some_t;
@@ -413,35 +413,35 @@ namespace sio { namespace async {
   template <class Res, class Env = stdexec::no_env>
   concept file_resource = resource<Res> && file_handle<resource_token_of_t<Res, Env>>;
 
-  namespace file_ {
-    struct file_t;
-    extern const file_t file;
+  namespace open_file_ {
+    struct open_file_t;
+    extern const open_file_t open_file;
 
     template <class FileFactory, class... Args>
     concept has_member_customization = //
       requires(FileFactory&& factory, Args&&... args) {
-        static_cast<FileFactory&&>(factory).file(file, static_cast<Args&&>(args)...);
+        static_cast<FileFactory&&>(factory).open_file(open_file, static_cast<Args&&>(args)...);
       };
 
     template <class FileFactory, class... Args>
     concept nothrow_member_customization = //
       requires(FileFactory&& factory, Args&&... args) {
-        { static_cast<FileFactory&&>(factory).file(file, static_cast<Args&&>(args)...) } noexcept;
+        { static_cast<FileFactory&&>(factory).open_file(open_file, static_cast<Args&&>(args)...) } noexcept;
       };
 
     template <class FileFactory, class... Args>
     concept has_static_member_customization = //
       requires(FileFactory&& factory, Args&&... args) {
-        decay_t<FileFactory>::file(
-          static_cast<FileFactory>(factory), file, static_cast<Args&&>(args)...);
+        decay_t<FileFactory>::open_file(
+          static_cast<FileFactory>(factory), open_file, static_cast<Args&&>(args)...);
       };
 
     template <class FileFactory, class... Args>
     concept nothrow_static_member_customization = //
       requires(FileFactory&& factory, Args&&... args) {
         {
-          decay_t<FileFactory>::file(
-            static_cast<FileFactory>(factory), file, static_cast<Args&&>(args)...)
+          decay_t<FileFactory>::open_file(
+            static_cast<FileFactory>(factory), open_file, static_cast<Args&&>(args)...)
         } noexcept;
       };
 
@@ -477,7 +477,7 @@ namespace sio { namespace async {
         creation,
         caching>;
 
-    struct file_t {
+    struct open_file_t {
       template <path_factory FileFactory>
         requires has_full_customization<FileFactory>
       auto operator()(
@@ -496,11 +496,11 @@ namespace sio { namespace async {
             mode,
             creation,
             caching>) {
-          return static_cast<FileFactory&&>(factory).file(
-            file_t{}, path, base, flags, creat, chache);
+          return static_cast<FileFactory&&>(factory).open_file(
+            open_file_t{}, path, base, flags, creat, chache);
         } else {
-          return FileFactory::file(
-            static_cast<FileFactory&&>(factory), file_t{}, path, base, flags, creat, chache);
+          return FileFactory::open_file(
+            static_cast<FileFactory&&>(factory), open_file_t{}, path, base, flags, creat, chache);
         }
       }
 
@@ -525,11 +525,11 @@ namespace sio { namespace async {
       }
     };
 
-    inline constexpr file_t file{};
+    inline constexpr open_file_t open_file{};
   }
 
-  using file_::file_t;
-  using file_::file;
+  using open_file_::open_file_t;
+  using open_file_::open_file;
 
   template <class Factory>
   concept file_factory =     //
@@ -541,7 +541,7 @@ namespace sio { namespace async {
       mode mode,
       creation creation,
       caching caching) {
-      { async::file(factory, base, path, mode, creation, caching) } -> file_resource;
+      { async::open_file(factory, base, path, mode, creation, caching) } -> file_resource;
     };
 
   template <class Scheduler>

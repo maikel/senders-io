@@ -49,13 +49,13 @@ TEST_CASE("file_handle - Open a path", "[file_handle]") {
   sio::io_uring::io_scheduler scheduler{&context};
   sync_wait(
     context,
-    sio::async::use_resources(no_op_path, sio::defer(sio::async::path, scheduler, "/dev/null")));
+    sio::async::use_resources(no_op_path, sio::defer(sio::async::open_path, scheduler, "/dev/null")));
 }
 
 TEST_CASE("file_handle - Open a file to /dev/null", "[file_handle]") {
   exec::io_uring_context context{};
   sio::io_uring::io_scheduler scheduler{&context};
   using sio::async::mode;
-  auto file = sio::defer(sio::async::file, scheduler, "/dev/null", mode::read);
+  auto file = sio::defer(sio::async::open_file, scheduler, "/dev/null", mode::read);
   sync_wait(context, sio::async::use_resources(no_op_file, std::move(file)));
 }
