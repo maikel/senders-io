@@ -122,13 +122,8 @@ namespace sio {
       exec::set_value_unless_stopped(static_cast<Receiver&&>(op_->receiver_));
     }
 
-    exec::make_env_t<
-      stdexec::env_of_t<Receiver>,
-      exec::with_t<exec::sequence_receiver_stops_item_t, std::true_type>>
-      get_env(stdexec::get_env_t) const noexcept {
-      return exec::make_env(
-        stdexec::get_env(op_->receiver_),
-        exec::with(exec::sequence_receiver_stops_item, std::true_type{}));
+    stdexec::env_of_t<Receiver> get_env(stdexec::get_env_t) const noexcept {
+      return stdexec::get_env(op_->receiver_);
     }
   };
 

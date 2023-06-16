@@ -50,28 +50,28 @@ namespace sio::net::ip {
 
     address_v4() = default;
 
-    explicit address_v4(uint_type __addr) noexcept
-      : __addr_{::htonl(__addr)} {
+    explicit address_v4(uint_type addr) noexcept
+      : addr_{::htonl(addr)} {
     }
 
-    explicit address_v4(bytes_type __bytes) noexcept
-      : __addr_{std::bit_cast<::in_addr_t>(__bytes)} {
+    explicit address_v4(bytes_type bytes) noexcept
+      : addr_{std::bit_cast<::in_addr_t>(bytes)} {
     }
 
     uint_type to_uint() const noexcept {
-      return ::ntohl(__addr_);
+      return ::ntohl(addr_);
     }
 
     bytes_type to_bytes() const noexcept {
-      return std::bit_cast<bytes_type>(__addr_);
+      return std::bit_cast<bytes_type>(addr_);
     }
 
     template <class _Allocator = std::allocator<char>>
     std::basic_string<char, std::char_traits<char>, _Allocator>
       to_string(_Allocator __alloc = _Allocator()) const {
       char __buffer[INET_ADDRSTRLEN + 1] = {};
-      inet_ntop(AF_INET, &__addr_, __buffer, INET_ADDRSTRLEN);
-      return std::string(__buffer, __alloc);
+      inet_ntop(AF_INET, &addr_, __buffer, INET_ADDRSTRLEN);
+      return std::basic_string<char, std::char_traits<char>, _Allocator>(__buffer, __alloc);
     }
 
     bool is_loopback() const noexcept {
@@ -89,7 +89,7 @@ namespace sio::net::ip {
     friend auto operator<=>(const address_v4&, const address_v4&) = default;
 
    private:
-    ::in_addr_t __addr_;
+    ::in_addr_t addr_;
   };
 
   class address_v6 {
