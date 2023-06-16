@@ -30,6 +30,7 @@ target_sources(sio PUBLIC
   BASE_DIRS source
   FILES
     source/sio/net/ip/address.hpp
+    source/sio/net/ip/endpoint.hpp
     source/sio/net/ip/resolve.hpp
     source/sio/net/ip/tcp.hpp
     source/sio/net/ip/udp.hpp

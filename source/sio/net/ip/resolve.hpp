@@ -24,6 +24,7 @@
 #include <exec/inline_scheduler.hpp>
 
 #include "./address.hpp"
+#include "./endpoint.hpp"
 
 #include "../../assert.hpp"
 #include "../../concepts.hpp"
@@ -36,7 +37,7 @@
 #include <netdb.h>
 #include <signal.h>
 
-namespace sio::net::ip {
+namespace sio::ip {
   enum class gaierrc {
     invalid_flags = EAI_BADFLAGS,
     unknown_name = EAI_NONAME,
@@ -61,10 +62,10 @@ namespace sio::net::ip {
 
 namespace std {
   template <>
-  struct is_error_code_enum<sio::net::ip::gaierrc> : true_type { };
+  struct is_error_code_enum<sio::ip::gaierrc> : true_type { };
 }
 
-namespace sio::net::ip {
+namespace sio::ip {
   struct resolver_error_category_t : std::error_category {
     const char* name() const noexcept override {
       return "resolver";
@@ -264,13 +265,13 @@ namespace sio::async {
     template <class Scheduler, class Receiver>
     struct operation {
 
-      using just_result = decltype(stdexec::just(stdexec::__declval<net::ip::resolver_result>()));
+      using just_result = decltype(stdexec::just(stdexec::__declval<ip::resolver_result>()));
       using next_sender = exec::next_sender_of_t<Receiver&, just_result>;
       using next_rcvr_t = next_receiver<Scheduler, Receiver>;
 
       [[no_unique_address]] Receiver receiver_;
       Scheduler scheduler_;
-      net::ip::resolver_query query_;
+      ip::resolver_query query_;
       ::gaicb request_{};
       ::addrinfo* result_iter_{};
 
@@ -278,10 +279,10 @@ namespace sio::async {
       ::gaicb* requests_[1]{&request_};
       sigevent_t sigev{};
 
-      explicit operation(Scheduler&& scheduler, net::ip::resolver_query query, Receiver&& receiver)
+      explicit operation(Scheduler&& scheduler, ip::resolver_query query, Receiver&& receiver)
         : receiver_{static_cast<Receiver&&>(receiver)}
         , scheduler_{static_cast<Scheduler&&>(scheduler)}
-        , query_{static_cast<net::ip::resolver_query&&>(query)} {
+        , query_{static_cast<ip::resolver_query&&>(query)} {
         request_.ar_name = query_.host_name().c_str();
         request_.ar_service = query_.service_name().c_str();
         request_.ar_request = &query_.hints();
@@ -295,7 +296,7 @@ namespace sio::async {
         auto& next_op = next_op_.emplace(stdexec::__conv{[&] {
           auto res = //
             stdexec::just(
-              net::ip::resolver_result{result_iter_, query_.host_name(), query_.service_name()});
+              ip::resolver_result{result_iter_, query_.host_name(), query_.service_name()});
           return stdexec::connect(exec::set_next(receiver_, res), next_rcvr_t{this});
         }});
         stdexec::start(next_op);
@@ -319,7 +320,7 @@ namespace sio::async {
         } else if (rc != EAI_INPROGRESS) {
           stdexec::set_error(
             static_cast<Receiver&&>(self.receiver_),
-            std::error_code{rc, net::ip::resolver_error_category()});
+            std::error_code{rc, ip::resolver_error_category()});
         }
       }
 
@@ -332,10 +333,10 @@ namespace sio::async {
     using __make_completion_signatures = stdexec::__try_make_completion_signatures<
       decltype(stdexec::on(
         stdexec::__declval<Scheduler>(),
-        stdexec::just(stdexec::__declval<net::ip::resolver_result>()))),
+        stdexec::just(stdexec::__declval<ip::resolver_result>()))),
       Env,
       stdexec::completion_signatures<
-        stdexec::set_value_t(net::ip::resolver_result),
+        stdexec::set_value_t(ip::resolver_result),
         stdexec::set_error_t(std::error_code),
         stdexec::set_error_t(std::exception_ptr),
         stdexec::set_stopped_t()>,
@@ -346,14 +347,14 @@ namespace sio::async {
       using is_sender = exec::sequence_tag;
 
       Scheduler scheduler_;
-      net::ip::resolver_query query_;
+      ip::resolver_query query_;
 
       template <decays_to<sender> Self, class Receiver>
       static operation<Scheduler, Receiver>
         subscribe(Self&& self, exec::subscribe_t, Receiver&& receiver) {
         return operation<Scheduler, Receiver>{
           static_cast<Scheduler&&>(self.scheduler_),
-          static_cast<net::ip::resolver_query&&>(self.query_),
+          static_cast<ip::resolver_query&&>(self.query_),
           static_cast<Receiver&&>(receiver)};
       }
 
@@ -366,37 +367,35 @@ namespace sio::async {
 
   struct resolve_t {
     template <class _Resolver>
-      requires stdexec::tag_invocable<resolve_t, _Resolver, const net::ip::resolver_query&>
-    auto operator()(_Resolver&& __resolver, net::ip::resolver_query query) const
-      noexcept(stdexec::nothrow_tag_invocable<resolve_t, _Resolver, const net::ip::resolver_query&>)
-        -> stdexec::tag_invoke_result_t<resolve_t, _Resolver, const net::ip::resolver_query&> {
+      requires stdexec::tag_invocable<resolve_t, _Resolver, const ip::resolver_query&>
+    auto operator()(_Resolver&& __resolver, ip::resolver_query query) const
+      noexcept(stdexec::nothrow_tag_invocable<resolve_t, _Resolver, const ip::resolver_query&>)
+        -> stdexec::tag_invoke_result_t<resolve_t, _Resolver, const ip::resolver_query&> {
       return tag_invoke(*this, static_cast<_Resolver&&>(__resolver), query);
     }
 
     template <stdexec::scheduler Scheduler>
-      requires(!stdexec::tag_invocable<resolve_t, Scheduler, const net::ip::resolver_query&>)
-    resolve_::sender<Scheduler> operator()(Scheduler scheduler, net::ip::resolver_query query) const
-    {
-      return resolve_::sender<Scheduler>{scheduler, static_cast<net::ip::resolver_query&&>(query)};
+      requires(!stdexec::tag_invocable<resolve_t, Scheduler, const ip::resolver_query&>)
+    resolve_::sender<Scheduler> operator()(Scheduler scheduler, ip::resolver_query query) const {
+      return resolve_::sender<Scheduler>{scheduler, static_cast<ip::resolver_query&&>(query)};
     }
 
     template <stdexec::scheduler Scheduler, class _Arg, class... _Args>
-      requires(!stdexec::__decays_to<_Arg, net::ip::resolver_query>)
-           && callable<resolve_t, Scheduler, net::ip::resolver_query>
-           && std::constructible_from<net::ip::resolver_query, _Arg, _Args...>
+      requires(!stdexec::__decays_to<_Arg, ip::resolver_query>)
+           && callable<resolve_t, Scheduler, ip::resolver_query>
+           && std::constructible_from<ip::resolver_query, _Arg, _Args...>
     auto operator()(Scheduler scheduler, _Arg&& __arg, _Args&&... __args) const {
       return this->operator()(
-        scheduler,
-        net::ip::resolver_query{static_cast<_Arg&&>(__arg), static_cast<_Args&&>(__args)...});
+        scheduler, ip::resolver_query{static_cast<_Arg&&>(__arg), static_cast<_Args&&>(__args)...});
     }
 
     template <class _Arg, class... _Args>
       requires(!stdexec::scheduler<_Arg>)
-           && std::constructible_from<net::ip::resolver_query, _Arg, _Args...>
+           && std::constructible_from<ip::resolver_query, _Arg, _Args...>
     auto operator()(_Arg&& __arg, _Args&&... __args) const {
       return this->operator()(
         exec::inline_scheduler(),
-        net::ip::resolver_query{static_cast<_Arg&&>(__arg), static_cast<_Args&&>(__args)...});
+        ip::resolver_query{static_cast<_Arg&&>(__arg), static_cast<_Args&&>(__args)...});
     }
   };
 
