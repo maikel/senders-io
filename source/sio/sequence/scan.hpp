@@ -16,6 +16,7 @@
 #pragma once
 
 #include "../concepts.hpp"
+#include "../request_stop.hpp"
 #include "./sequence_concepts.hpp"
 
 #include <functional>
@@ -103,6 +104,10 @@ namespace sio {
         , op_{stdexec::connect(
             static_cast<ItemSender&&>(sndr),
             item_receiver<ItemReceiver, Tp, Fn, IsLockStep>{this})} {
+      }
+
+      bool request_stop() noexcept {
+        return op_.request_stop();
       }
 
       void start(stdexec::start_t) noexcept {
@@ -228,6 +233,10 @@ namespace sio {
           Env,
           stdexec::completion_signatures<stdexec::set_error_t(std::exception_ptr)>,
           stdexec::__mconst<stdexec::completion_signatures<stdexec::set_value_t(Tp)>> >>;
+
+      stdexec::env_of_t<Sender> get_env(stdexec::get_env_t) const noexcept {
+        return stdexec::get_env(sndr_);
+      }
 
       exec::sequence_env_of_t<Sender> get_sequence_env(exec::get_sequence_env_t) const noexcept {
         return exec::get_sequence_env(sndr_);

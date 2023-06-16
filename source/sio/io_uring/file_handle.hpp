@@ -286,6 +286,11 @@ namespace sio::io_uring {
       return read_operation<Receiver>{
         std::in_place, *context_, buffers_, fd_, offset_, static_cast<Receiver&&>(rcvr)};
     }
+
+    auto get_env(stdexec::get_env_t) const noexcept {
+      return exec::make_env(exec::with(
+        stdexec::get_completion_scheduler<stdexec::set_value_t>, context_->get_scheduler()));
+    }
   };
 
   struct write_submission {
@@ -375,6 +380,11 @@ namespace sio::io_uring {
     write_operation<Receiver> connect(stdexec::connect_t, Receiver rcvr) const noexcept {
       return write_operation<Receiver>{
         std::in_place, *context_, buffers_, fd_, offset_, static_cast<Receiver&&>(rcvr)};
+    }
+
+    auto get_env(stdexec::get_env_t) const noexcept {
+      return exec::make_env(exec::with(
+        stdexec::get_completion_scheduler<stdexec::set_value_t>, context_->get_scheduler()));
     }
   };
 

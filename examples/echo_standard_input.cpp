@@ -1,9 +1,11 @@
 #include <sio/io_uring/file_handle.hpp>
 #include <sio/sequence/reduce.hpp>
+#include <sio/timeout.hpp>
 
 #include <exec/task.hpp>
 
 #include <iostream>
+#include <chrono>
 
 template <class Tp>
 using task = exec::basic_task<
@@ -23,24 +25,19 @@ std::span<std::byte> as_bytes(char (&array)[N]) {
   return std::span<std::byte>(reinterpret_cast<std::byte*>(span.data()), span.size_bytes());
 }
 
-task<void> write_all(sio::async::writable_byte_stream auto out, std::span<const std::byte> buffer) {
-  while (!buffer.empty()) {
-    std::size_t nbytes = co_await sio::async::write_some(out, buffer);
-    buffer = buffer.subspan(nbytes);
-  }
-}
 
 task<void>
   echo(sio::async::readable_byte_stream auto in, sio::async::writable_byte_stream auto out) {
   char buffer[64] = {};
-  std::size_t nbytes = co_await sio::async::read_some(in, as_bytes(buffer));
+  using namespace std::chrono_literals;
+  std::size_t nbytes = co_await sio::timeout(sio::async::read_some(in, as_bytes(buffer)), 3s);
   while (nbytes) {
     auto written_bytes = co_await sio::async::write(out, as_bytes(buffer).subspan(0, nbytes));
     if (written_bytes != nbytes) {
       std::cerr << "Failed to write all bytes" << std::endl;
       co_return;
     }
-    nbytes = co_await sio::async::read_some(in, as_bytes(buffer));
+    nbytes = co_await sio::timeout(sio::async::read_some(in, as_bytes(buffer)), 3s);
   }
   co_return;
 }
@@ -52,5 +49,11 @@ int main() {
   sio::io_uring::native_fd_handle stdin_handle{context, STDIN_FILENO};
   sio::io_uring::byte_stream in(stdin_handle);
   static_assert(sio::async::byte_stream<sio::io_uring::byte_stream>);
-  stdexec::sync_wait(stdexec::when_all(echo(in, out), context.run(exec::until::empty)));
+  try {
+    stdexec::sync_wait(stdexec::when_all(echo(in, out), context.run(exec::until::empty)));
+  } catch (const std::system_error& e) {
+    if (e.code() == std::errc::timed_out) {
+      std::cout << "Timeout.\n";
+    }
+  }
 }

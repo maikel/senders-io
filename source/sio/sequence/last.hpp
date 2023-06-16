@@ -16,6 +16,7 @@
 #pragma once
 
 #include "../concepts.hpp"
+#include "../request_stop.hpp"
 #include "./sequence_concepts.hpp"
 
 #include <exec/materialize.hpp>
@@ -92,15 +93,23 @@ namespace sio {
     struct item_receiver {
       item_operation_base<ItemReceiver, ResultVariant, IsLockStep>* op_;
 
-      template <class Tag, class... Args>
-        requires emplaceable<ResultVariant, __decayed_tuple<Tag, Args...>, Tag, Args...>
-      void set_value(set_value_t, Tag, Args&&... args) && noexcept {
-        op_->result_->emplace(Tag{}, static_cast<Args&&>(args)...);
-        if constexpr (same_as<Tag, set_value_t>) {
-          stdexec::set_value(static_cast<ItemReceiver&&>(op_->receiver_));
-        } else {
-          stdexec::set_stopped(static_cast<ItemReceiver&&>(op_->receiver_));
-        }
+      template <class... Args>
+        requires emplaceable<ResultVariant, __decayed_tuple<set_value_t, Args...>, set_value_t, Args...>
+      void set_value(stdexec::set_value_t, Args&&... args) && noexcept {
+        op_->result_->emplace(stdexec::set_value, static_cast<Args&&>(args)...);
+        stdexec::set_value(static_cast<ItemReceiver&&>(op_->receiver_));
+      }
+
+      template <class Error>
+        requires emplaceable<ResultVariant, __decayed_tuple<set_error_t, Error>, set_error_t, Error>
+      void set_error(stdexec::set_error_t, Error&& error) && noexcept {
+        op_->result_->emplace(stdexec::set_error, static_cast<Error&&>(error));
+        stdexec::set_stopped(static_cast<ItemReceiver&&>(op_->receiver_));
+      }
+
+      void set_stopped(stdexec::set_stopped_t) && noexcept {
+        op_->result_->emplace(stdexec::set_stopped);
+        stdexec::set_stopped(static_cast<ItemReceiver&&>(op_->receiver_));
       }
 
       auto get_env(get_env_t) const noexcept {
@@ -131,6 +140,12 @@ namespace sio {
         , op_{stdexec::connect(static_cast<Sender&&>(sndr), item_receiver_t{this})} {
       }
 
+      bool request_stop() noexcept
+        // requires callable<sio::request_stop_t, connect_result_t<Sender, item_receiver_t>&>
+      {
+        return op_.request_stop();
+      }
+
       void start(start_t) noexcept {
         stdexec::start(op_);
       }
@@ -155,13 +170,11 @@ namespace sio {
       static auto connect(Self&& self, connect_t, Receiver rcvr) -> operation_t<Self, Receiver> {
         return {self.parent_, static_cast<Self&&>(self).sender_, static_cast<Receiver&&>(rcvr)};
       }
-    };
 
-    template <class Sender, class ResultVariant, bool IsLockStep>
-    auto make_item_sender(Sender&& sndr, result_type<ResultVariant, IsLockStep>* parent) noexcept(
-      nothrow_decay_copyable<Sender>) -> item_sender<decay_t<Sender>, ResultVariant, IsLockStep> {
-      return {static_cast<Sender&&>(sndr), parent};
-    }
+      stdexec::env_of_t<Sender> get_env(stdexec::get_env_t) const noexcept {
+        return stdexec::get_env(sender_);
+      }
+    };
 
     template <class Receiver, class ResultVariant, bool IsLockStep>
     struct operation_base : result_type<ResultVariant, IsLockStep> {
@@ -173,8 +186,8 @@ namespace sio {
       operation_base<Receiver, ResultVariant, IsLockStep>* op_;
 
       template <class Item>
-      auto set_next(exec::set_next_t, Item&& item) {
-        return make_item_sender(exec::materialize(static_cast<Item&&>(item)), op_);
+      item_sender<decay_t<Item>, ResultVariant, IsLockStep> set_next(exec::set_next_t, Item&& item) {
+        return {static_cast<Item&&>(item), op_};
       }
 
       void set_value(set_value_t) && noexcept {
@@ -269,6 +282,10 @@ namespace sio {
         -> __concat_completion_signatures_t<
           completion_signatures_of_t<Sequence, Env>,
           completion_signatures<set_stopped_t()>>;
+
+      stdexec::env_of_t<Sequence> get_env(stdexec::get_env_t) const noexcept {
+        return stdexec::get_env(sequence_);
+      }
     };
 
     struct last_t {
