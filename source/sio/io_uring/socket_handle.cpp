@@ -22,12 +22,8 @@ namespace sio::io_uring {
       ::io_uring_sqe sqe_{};
       sqe_.opcode = IORING_OP_CONNECT;
       sqe_.fd = fd_;
-      sqe_.addr = std::bit_cast<__u64>(&peer_endpoint_);
-      if (peer_endpoint_.is_v4()) {
-        sqe_.off = sizeof(sockaddr_in);
-      } else {
-        sqe_.off = sizeof(sockaddr_in6);
-      }
+      sqe_.addr = std::bit_cast<__u64>(peer_endpoint_.data());
+      sqe_.off = peer_endpoint_.size();
       sqe = sqe_;
     }
   }

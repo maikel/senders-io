@@ -71,6 +71,22 @@ namespace sio::ip {
       }
     }
 
+    ::sockaddr* data() noexcept {
+      return &data_.base;
+    }
+
+    const ::sockaddr* data() const noexcept {
+      return &data_.base;
+    }
+
+    ::socklen_t size() const noexcept {
+      if (is_v4()) {
+        return sizeof(data_.v4);
+      } else {
+        return sizeof(data_.v6);
+      }
+    }
+
     friend bool operator==(const endpoint& e1, const endpoint& e2) noexcept {
       return e1.address() == e2.address() && e1.port() == e2.port();
     }
