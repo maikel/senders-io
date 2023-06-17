@@ -25,33 +25,55 @@ namespace sio::io_uring {
 
   namespace socket_ {
     template <class Protocol, class Receiver>
-    struct operation {
+    struct operation_base {
       exec::io_uring_context& context_;
       Protocol protocol_;
       [[no_unique_address]] Receiver receiver_;
+
+      operation_base(
+        exec::io_uring_context& context,
+        Protocol protocol,
+        Receiver receiver) noexcept(nothrow_move_constructible<Receiver>)
+        : context_{context}
+        , protocol_{protocol}
+        , receiver_{static_cast<Receiver&&>(receiver)} {
+      }
+
+      exec::io_uring_context& context() const noexcept {
+        return context_;
+      }
 
       static std::true_type ready() noexcept {
         return {};
       }
 
-      void submit(::io_uring_sqe&) noexcept;
+      void submit(::io_uring_sqe&) noexcept {}
 
       void complete(const ::io_uring_cqe&) noexcept;
     };
 
+    template <class Protocol, class Receiver>
+    using operation = io_task_facade<operation_base<Protocol, Receiver>>;
+
     template <class Protocol>
     struct sender {
-      exec::io_uring_context& context_;
+      using is_sender = void;
+
+      exec::io_uring_context* context_;
       Protocol protocol_;
 
       using completion_signatures = stdexec::completion_signatures<
         stdexec::set_value_t(socket_handle),
         stdexec::set_error_t(std::error_code)>;
 
-      template <stdexec::receiver_of<completion_signatures> Receiver>
-      operation<Protocol, Receiver>
-        connect(async::connect_t, Receiver rcvr) noexcept(nothrow_move_constructible<Receiver>) {
-        return {context_, protocol_, static_cast<Receiver&&>(rcvr)};
+      template <class Receiver>
+      auto
+        connect(stdexec::connect_t, Receiver rcvr) const noexcept(nothrow_move_constructible<Receiver>) {
+        return operation<Protocol, Receiver>{std::in_place, *context_, protocol_, static_cast<Receiver&&>(rcvr)};
+      }
+ 
+      env get_env(stdexec::get_env_t) const noexcept {
+        return {context_->get_scheduler()};
       }
     };
   }
@@ -98,7 +120,7 @@ namespace sio::io_uring {
     struct sender {
       using is_sender = void;
 
-      exec::io_uring_context& context_;
+      exec::io_uring_context* context_;
       ip::endpoint peer_endpoint_;
       int fd_;
 
@@ -108,22 +130,21 @@ namespace sio::io_uring {
         stdexec::set_stopped_t()>;
 
       template <stdexec::receiver_of<completion_signatures> Receiver>
-      operation<Receiver> connect(async::connect_t, Receiver rcvr) const
+      operation<Receiver> connect(stdexec::connect_t, Receiver rcvr) const
         noexcept(nothrow_move_constructible<Receiver>) {
         return operation<Receiver>{
           std::in_place, fd_, peer_endpoint_, context_, static_cast<Receiver&&>(rcvr)};
       }
 
-      auto get_env(stdexec::get_env_t) const noexcept {
-        return exec::make_env(exec::with(
-          stdexec::get_completion_scheduler<stdexec::set_value_t>, context_.get_scheduler()));
+      env get_env(stdexec::get_env_t) const noexcept {
+        return {context_->get_scheduler()};
       }
     };
   }
 
-  struct socket_handle : native_fd_handle {
+  struct socket_handle : byte_stream {
     connect_::sender connect(async::connect_t, ip::endpoint peer_endpoint) noexcept {
-      return {*context_, peer_endpoint, fd_};
+      return {this->context_, peer_endpoint, fd_};
     }
 
     ip::endpoint local_endpoint() const;
@@ -132,13 +153,27 @@ namespace sio::io_uring {
 
   template <class Protocol>
   struct socket_resouce {
+    exec::io_uring_context& context_;
     Protocol protocol_;
-    socket_::sender<Protocol> open(async::open_t) noexcept;
+
+    explicit socket_resouce(exec::io_uring_context& context, Protocol protocol) noexcept
+      : context_{context}
+      , protocol_{protocol} {
+    }
+
+    explicit socket_resouce(exec::io_uring_context* context, Protocol protocol) noexcept
+      : context_{*context}
+      , protocol_{protocol} {
+    }
+
+    socket_::sender<Protocol> open(async::open_t) noexcept {
+      return {&context_, protocol_};
+    }
   };
 
   namespace socket_ {
     template <class Protocol, class Receiver>
-    void operation<Protocol, Receiver>::complete(const ::io_uring_cqe&) noexcept {
+    void operation_base<Protocol, Receiver>::complete(const ::io_uring_cqe&) noexcept {
       int rc = ::socket(protocol_.family(), protocol_.type(), protocol_.protocol());
       if (rc == -1) {
         stdexec::set_error(
@@ -147,7 +182,7 @@ namespace sio::io_uring {
         stdexec::set_value(
           static_cast<Receiver&&>(receiver_),
           socket_handle{
-            native_fd_handle{context_, rc}
+            byte_stream{native_fd_handle{context_, rc}}
         });
       }
     }
