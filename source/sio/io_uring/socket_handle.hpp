@@ -105,10 +105,10 @@ namespace sio::io_uring {
 
       void complete(const ::io_uring_cqe& cqe) noexcept {
         if (cqe.res == 0) {
-          stdexec::set_value(static_cast<Receiver&&>(this->receiver_));
+          stdexec::set_value(static_cast<operation_base&&>(*this).receiver());
         } else {
           stdexec::set_error(
-            static_cast<Receiver&&>(this->receiver_),
+            static_cast<operation_base&&>(*this).receiver(),
             std::error_code(-cqe.res, std::system_category()));
         }
       }
@@ -133,7 +133,7 @@ namespace sio::io_uring {
       operation<Receiver> connect(stdexec::connect_t, Receiver rcvr) const
         noexcept(nothrow_move_constructible<Receiver>) {
         return operation<Receiver>{
-          std::in_place, fd_, peer_endpoint_, context_, static_cast<Receiver&&>(rcvr)};
+          std::in_place, fd_, peer_endpoint_, *context_, static_cast<Receiver&&>(rcvr)};
       }
 
       env get_env(stdexec::get_env_t) const noexcept {
@@ -143,7 +143,7 @@ namespace sio::io_uring {
   }
 
   struct socket_handle : byte_stream {
-    connect_::sender connect(async::connect_t, ip::endpoint peer_endpoint) noexcept {
+    connect_::sender connect(async::connect_t, ip::endpoint peer_endpoint) const noexcept {
       return {this->context_, peer_endpoint, fd_};
     }
 
