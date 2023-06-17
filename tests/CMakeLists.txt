@@ -16,6 +16,7 @@ add_executable(test_sio
   net/test_address.cpp
   net/test_endpoint.cpp
   net/test_resolve.cpp
+  net/test_socket_handle.cpp
   sequence/test_empty_sequence.cpp
   sequence/test_first.cpp
   sequence/test_ignore_all.cpp
