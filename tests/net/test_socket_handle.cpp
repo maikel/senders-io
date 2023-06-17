@@ -42,8 +42,10 @@ TEST_CASE("socket_handle - Connect to localhost", "[socket_handle][connect]") {
     context,
     sio::async::use_resources(
       [&](auto server, auto client) {
-        REQUIRE(::bind(server.get(), ep.data(), ep.size()) != -1);
-        REQUIRE(::listen(server.get(), 100) != -1);
+        int one = 1;
+        REQUIRE(::setsockopt(server.get(), SOL_SOCKET, SO_REUSEADDR, &one, sizeof(int)) == 0);
+        REQUIRE(::bind(server.get(), ep.data(), ep.size()) == 0);
+        REQUIRE(::listen(server.get(), 100) == 0);
         auto accept = stdexec::transfer_just(thread.get_scheduler(), server)
                     | stdexec::then([](auto server) noexcept {
                         int rc = ::accept(server.get(), nullptr, nullptr);
