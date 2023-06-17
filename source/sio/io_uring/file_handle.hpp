@@ -35,6 +35,16 @@
 #include <sys/uio.h>
 
 namespace sio::io_uring {
+  struct env {
+    exec::io_uring_scheduler scheduler;
+
+    friend exec::io_uring_scheduler tag_invoke(
+      stdexec::get_completion_scheduler_t<stdexec::set_value_t>,
+      const env& self) noexcept {
+      return self.scheduler;
+    }
+  };
+
   struct close_submission {
     exec::io_uring_context& context_;
     int fd_;
@@ -100,6 +110,10 @@ namespace sio::io_uring {
     close_operation<Receiver> connect(stdexec::connect_t, Receiver rcvr) const noexcept {
       return close_operation<Receiver>{
         std::in_place, *context_, static_cast<Receiver&&>(rcvr), fd_};
+    }
+
+    env get_env(stdexec::get_env_t) const noexcept {
+      return {context_->get_scheduler()};
     }
   };
 
@@ -198,6 +212,10 @@ namespace sio::io_uring {
         *self.context_,
         static_cast<Receiver&&>(rcvr)};
     }
+
+    env get_env(stdexec::get_env_t) const noexcept {
+      return {context_->get_scheduler()};
+    }
   };
 
   struct read_submission {
@@ -288,6 +306,10 @@ namespace sio::io_uring {
       return read_operation<Receiver>{
         std::in_place, *context_, buffers_, fd_, offset_, static_cast<Receiver&&>(rcvr)};
     }
+
+    env get_env(stdexec::get_env_t) const noexcept {
+      return {context_->get_scheduler()};
+    }
   };
 
   struct write_submission {
@@ -377,6 +399,10 @@ namespace sio::io_uring {
     write_operation<Receiver> connect(stdexec::connect_t, Receiver rcvr) const noexcept {
       return write_operation<Receiver>{
         std::in_place, *context_, buffers_, fd_, offset_, static_cast<Receiver&&>(rcvr)};
+    }
+
+    env get_env(stdexec::get_env_t) const noexcept {
+      return {context_->get_scheduler()};
     }
   };
 
