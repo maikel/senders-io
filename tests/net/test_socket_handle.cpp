@@ -14,7 +14,7 @@ void sync_wait(exec::io_uring_context& context, Sender&& sender) {
 
 template <class Proto>
 auto make_deferred_socket(exec::io_uring_context* ctx, Proto proto) {
-  return sio::make_deferred<sio::io_uring::socket_resouce<Proto>>(ctx, proto);
+  return sio::make_deferred<sio::io_uring::socket_resource<Proto>>(ctx, proto);
 }
 
 TEST_CASE("socket_handle - Open a socket", "[socket_handle]") {

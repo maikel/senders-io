@@ -97,9 +97,9 @@ namespace sio::io_uring {
       operation_base(
         int fd,
         ip::endpoint peer_endpoint,
-        exec::io_uring_context& context_,
+        exec::io_uring_context& context,
         Receiver rcvr) noexcept
-        : stoppable_op_base<Receiver>{context_, static_cast<Receiver&&>(rcvr)}
+        : stoppable_op_base<Receiver>{context, static_cast<Receiver&&>(rcvr)}
         , submission{fd, peer_endpoint} {
       }
 
@@ -152,16 +152,16 @@ namespace sio::io_uring {
   };
 
   template <class Protocol>
-  struct socket_resouce {
+  struct socket_resource {
     exec::io_uring_context& context_;
     Protocol protocol_;
 
-    explicit socket_resouce(exec::io_uring_context& context, Protocol protocol) noexcept
+    explicit socket_resource(exec::io_uring_context& context, Protocol protocol) noexcept
       : context_{context}
       , protocol_{protocol} {
     }
 
-    explicit socket_resouce(exec::io_uring_context* context, Protocol protocol) noexcept
+    explicit socket_resource(exec::io_uring_context* context, Protocol protocol) noexcept
       : context_{*context}
       , protocol_{protocol} {
     }
