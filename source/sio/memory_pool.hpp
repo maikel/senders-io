@@ -57,7 +57,7 @@ namespace sio {
       void operator()() const noexcept {
         {
           std::scoped_lock lock{op_->pool_->mutex_};
-          op_->pool_->pending_allocation_.erase(op_);
+          op_->pool_->pending_allocation_[op_->index_].erase(op_);
         }
         op_->stop_callback_.reset();
         stdexec::set_stopped(static_cast<Receiver&&>(op_->receiver_));
@@ -166,14 +166,16 @@ namespace sio {
     SIO_ASSERT(index_ >= 0 && index_ < 32);
     std::unique_lock lock(pool_->mutex_);
     void* block_ptr = pool_->block_lists_[index_];
-    void* buffer = block_ptr ? block_ptr
-                             : pool_->upstream_->allocate(sizeof(memory_block) + (1 << index_));
-    if (!buffer) {
-      pool_->pending_allocation_[index_].push_back(this);
-      stop_callback_.emplace(
-        stdexec::get_stop_token(stdexec::get_env(receiver_)), on_receiver_stop{this});
-      return;
-    }
+    void* buffer = block_ptr;
+    if (!buffer)
+      try {
+        buffer = pool_->upstream_->allocate(sizeof(memory_block) + (1 << index_));
+      } catch (std::bad_alloc&) {
+        pool_->pending_allocation_[index_].push_back(this);
+        stop_callback_.emplace(
+          stdexec::get_stop_token(stdexec::get_env(receiver_)), on_receiver_stop{this});
+        return;
+      }
     if (block_ptr) {
       void* next = nullptr;
       std::memcpy(&next, buffer, sizeof(void*));
