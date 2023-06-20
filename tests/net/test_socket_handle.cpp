@@ -4,14 +4,13 @@
 #include "sio/net/ip/tcp.hpp"
 
 #include <exec/single_thread_context.hpp>
+#include <exec/when_any.hpp>
 
 #include <catch2/catch.hpp>
 
 template <stdexec::sender Sender>
 void sync_wait(exec::io_uring_context& context, Sender&& sender) {
-  auto stop_on_done = stdexec::then(std::forward<Sender>(sender), [&context](auto&&...) { context.request_stop(); });
-  auto work = stdexec::when_all(stop_on_done, context.run(exec::until::stopped));
-  stdexec::sync_wait(std::move(work));
+  stdexec::sync_wait(exec::when_any(std::forward<Sender>(sender), context.run(exec::until::stopped)));
 }
 
 template <class Proto>
