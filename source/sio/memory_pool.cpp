@@ -35,10 +35,20 @@ namespace sio {
     }
   }
 
-  memory_pool::~memory_pool() = default;
+  memory_pool::~memory_pool() {
+    for (std::size_t i = 0; i < 32; ++i) {
+      void* ptr = block_lists_[i];
+      while (ptr) {
+        void* next = nullptr;
+        std::memcpy(&next, ptr, sizeof(void*));
+        upstream_->deallocate(ptr, 1 << (i + 1));
+        ptr = next;
+      }
+    }
+  }
 
   allocate_sender memory_pool::allocate(std::size_t size, std::size_t) {
-    auto index = log2_64(size);
+    auto index = log2_64(size + sizeof(memory_block));
     if (index < 0 || index >= 32) {
       throw std::invalid_argument("invalid size");
     }
@@ -53,27 +63,20 @@ namespace sio {
     if (!ptr) {
       return;
     }
-    auto* block = reinterpret_cast<memory_block*>(ptr) - 1;
-    SIO_ASSERT(block->index < 32);
+    void* blockptr = static_cast<char*>(ptr) - sizeof(memory_block);
+    memory_block block{};
+    std::memcpy(&block, blockptr, sizeof(memory_block));
+    SIO_ASSERT(block.index < 32);
     std::unique_lock lock(mutex_);
-    if (!pending_allocation_[block->index].empty()) {
-      allocate_operation_base* op = pending_allocation_[block->index].pop_front();
+    if (!pending_allocation_[block.index].empty()) {
+      allocate_operation_base* op = pending_allocation_[block.index].pop_front();
       op->result_.emplace<0>(ptr);
       lock.unlock();
       op->complete_(op);
     } else {
-      block->next = reinterpret_cast<memory_block*>(block_lists_[block->index]);
-      block_lists_[block->index] = block;
+      block.next = block_lists_[block.index];
+      std::memcpy(blockptr, &block, sizeof(memory_block));
+      block_lists_[block.index] = blockptr;
     }
-  }
-
-  deallocate_sender memory_pool::add_memory(std::span<std::byte> memory) noexcept {
-    auto index = log2_64(memory.size());
-    if (index < 0 || index >= 32) {
-      return deallocate(nullptr);
-    }
-    memory_block* block = reinterpret_cast<memory_block*>(memory.data());
-    block->index = index;
-    return deallocate(block + 1);
   }
 }

@@ -34,7 +34,7 @@ namespace sio {
   class memory_pool;
 
   struct memory_block {
-    memory_block* next;
+    void* next;
     std::size_t index;
   };
 
@@ -157,8 +157,6 @@ namespace sio {
 
     allocate_sender allocate(std::size_t size, std::size_t alignment);
     deallocate_sender deallocate(void* ptr) noexcept;
-
-    deallocate_sender add_memory(std::span<std::byte> memory) noexcept;
   };
 
   template <class Receiver>
@@ -169,7 +167,7 @@ namespace sio {
     void* buffer = block_ptr;
     if (!buffer)
       try {
-        buffer = pool_->upstream_->allocate(sizeof(memory_block) + (1 << index_));
+        buffer = pool_->upstream_->allocate(1 << (index_ + 1));
       } catch (std::bad_alloc&) {
         pool_->pending_allocation_[index_].push_back(this);
         stop_callback_.emplace(
