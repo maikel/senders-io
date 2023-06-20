@@ -19,7 +19,8 @@ find_package(stdexec REQUIRED)
 add_library(sio
   source/sio/io_uring/buffered_sequence.cpp
   source/sio/io_uring/file_handle.cpp
-  source/sio/io_uring/socket_handle.cpp)
+  source/sio/io_uring/socket_handle.cpp
+  source/sio/memory_pool.cpp)
 add_library(sio::sio ALIAS sio)
 target_include_directories(sio
   PUBLIC
@@ -51,6 +52,7 @@ target_sources(sio PUBLIC
     source/sio/io_uring/file_handle.hpp
     source/sio/io_uring/async_accept.hpp
     source/sio/io_uring/socket_handle.hpp
+    source/sio/async_allocator.hpp
     source/sio/async_resource.hpp
     source/sio/concepts.hpp
     source/sio/deferred.hpp

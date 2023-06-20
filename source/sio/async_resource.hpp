@@ -207,6 +207,8 @@ namespace sio::async {
 
     template <class Token, class Receiver>
     struct open_receiver {
+      using is_receiver = void;
+
       operation_base<Token, Receiver>* op_;
 
       stdexec::env_of_t<Receiver> get_env(stdexec::get_env_t) const noexcept {
