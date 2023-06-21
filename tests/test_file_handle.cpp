@@ -2,6 +2,7 @@
 #include "sio/sequence/ignore_all.hpp"
 
 #include <exec/task.hpp>
+#include <exec/when_any.hpp>
 
 #include <catch2/catch.hpp>
 
@@ -41,7 +42,7 @@ task<void> no_op_file(sio::io_uring::seekable_byte_stream input) {
 template <stdexec::sender Sender>
 void sync_wait(exec::io_uring_context& context, Sender&& sender) {
   stdexec::sync_wait(
-    stdexec::when_all(std::forward<Sender>(sender), context.run(exec::until::empty)));
+    stdexec::into_variant(exec::when_any(std::forward<Sender>(sender), context.run())));
 }
 
 TEST_CASE("file_handle - Open a path", "[file_handle]") {
@@ -49,7 +50,8 @@ TEST_CASE("file_handle - Open a path", "[file_handle]") {
   sio::io_uring::io_scheduler scheduler{&context};
   sync_wait(
     context,
-    sio::async::use_resources(no_op_path, sio::defer(sio::async::open_path, scheduler, "/dev/null")));
+    sio::async::use_resources(
+      no_op_path, sio::defer(sio::async::open_path, scheduler, "/dev/null")));
 }
 
 TEST_CASE("file_handle - Open a file to /dev/null", "[file_handle]") {
