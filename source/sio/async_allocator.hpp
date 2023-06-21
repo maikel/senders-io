@@ -20,6 +20,7 @@
 namespace sio::async {
   struct allocate_t;
   extern const allocate_t allocate;
+
   namespace allocate_ {
     template <class Alloc, class... Args>
     concept has_member_cust = requires(Alloc alloc, Args&&... args) {
@@ -34,7 +35,7 @@ namespace sio::async {
 
   struct allocate_t {
     template <class Alloc, class... Args>
-    requires allocate_::has_member_cust<Alloc, Args...>
+      requires allocate_::has_member_cust<Alloc, Args...>
     constexpr auto operator()(Alloc& alloc, Args&&... args) const
       noexcept(allocate_::nothrow_member_cust<Alloc, Args...>) {
       return alloc.allocate(allocate, static_cast<Args&&>(args)...);
@@ -60,7 +61,7 @@ namespace sio::async {
 
   struct deallocate_t {
     template <class Alloc, class... Args>
-    requires deallocate_::has_member_cust<Alloc, Args...>
+      requires deallocate_::has_member_cust<Alloc, Args...>
     constexpr auto operator()(Alloc& alloc, Args&&... args) const
       noexcept(deallocate_::nothrow_member_cust<Alloc, Args...>) {
       return alloc.deallocate(deallocate, static_cast<Args&&>(args)...);
@@ -75,5 +76,30 @@ namespace sio::async {
     { allocate(alloc, size) };
     { deallocate(alloc, ptr) };
   };
-}
 
+  struct get_allocator_t {
+    template <class Env>
+    requires stdexec::tag_invocable<get_allocator_t, Env>
+    auto operator()(const Env& env) const noexcept {
+      return stdexec::tag_invoke(*this, env);
+    }
+
+    auto operator()() const noexcept {
+      return stdexec::read(*this);
+    }
+  };
+  inline constexpr get_allocator_t get_allocator{};
+
+  template <class T>
+  struct new_delete_allocator {
+    using value_type = T;
+
+    auto allocate(allocate_t, ::size_t size) {
+      return stdexec::then(stdexec::just(size), [](std::size_t size) { return std::allocator<T>().allocate(size); });
+    }
+
+    void deallocate(deallocate_t, T* ptr) {
+      stdexec::then(stdexec::just(ptr), [](T* ptr) noexcept { std::allocator<T>().deallocate(ptr); });
+    }
+  };
+}

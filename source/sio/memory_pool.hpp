@@ -25,6 +25,7 @@
 #include <variant>
 
 #include "./assert.hpp"
+#include "./async_allocator.hpp"
 #include "./concepts.hpp"
 #include "./intrusive_list.hpp"
 
@@ -192,5 +193,20 @@ namespace sio {
     pool_->reclaim_memory(pointer_);
     stdexec::set_value(static_cast<Receiver&&>(receiver_));
   }
+
+  template <class T>
+  struct memory_pool_allocator {
+    memory_pool* pool_;
+
+    auto allocate(async::allocate_t, std::size_t size) const {
+      return stdexec::then(pool_->allocate(size, alignof(T)), [](void* ptr) noexcept {
+        return static_cast<T*>(ptr);
+      });
+    }
+
+    auto deallocate(async::deallocate_t, void* ptr) const noexcept {
+      return pool_->deallocate(ptr);
+    }
+  };
 
 } // namespace sio
