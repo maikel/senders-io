@@ -41,9 +41,9 @@ TEST_CASE("memory_pool - with env", "[memory_pool]") {
   sio::memory_pool pool{&upstream};
   auto env = exec::make_env(exec::with(sio::async::get_allocator, sio::memory_pool_allocator<char>{&pool}));
   auto alloc = stdexec::let_value(sio::async::get_allocator(), [](auto alloc) {
-    return stdexec::let_value(sio::async::allocate(alloc, 1), [alloc](void* ptr) {
+    return stdexec::let_value(sio::async::allocate(alloc, 1), [alloc](char* ptr) {
       CHECK(ptr);
-      *static_cast<char*>(ptr) = 0;
+      *ptr = 0;
       return sio::async::deallocate(alloc, ptr);
     });
   });
