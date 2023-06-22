@@ -2,6 +2,7 @@
 #include "sio/io_uring/async_accept.hpp"
 #include "sio/net/ip/address.hpp"
 #include "sio/net/ip/endpoint.hpp"
+#include "sio/net/ip/tcp.hpp"
 #include "sio/sequence/ignore_all.hpp"
 #include "sio/sequence/iterate.hpp"
 #include "sio/sequence/sequence_concepts.hpp"
@@ -41,6 +42,11 @@ TEST_CASE("async_accept concept", "[async_accept]") {
   ctx.run_until_empty();
 }
 
+template <class Proto>
+auto make_deferred_socket(exec::io_uring_context* ctx, Proto proto) {
+  return sio::make_deferred<sio::io_uring::socket_resource<Proto>>(ctx, proto);
+}
+
 TEST_CASE("async_accept should work", "[async_accept]") {
   using namespace stdexec;
   using namespace exec;
@@ -57,6 +63,19 @@ TEST_CASE("async_accept should work", "[async_accept]") {
 
   io_uring::acceptor acceptor{ctx, fd, ep};
 
-  stdexec::sender auto sndr = ignore_all(async_accept(acceptor));
-  ::sync_wait(ctx, std::move(sndr));
+  stdexec::sender auto accept = ignore_all(async_accept(acceptor));
+
+  int client = ::socket(AF_INET, SOCK_STREAM, 0);
+  CHECK(client != -1);
+  io_uring::socket_handle client_handle{ctx, client};
+
+  io_uring::io_scheduler scheduler{&ctx};
+
+  stdexec::sender auto connect = sio::async::use_resources(
+    [](sio::io_uring::socket_handle client) {
+      return sio::async::connect(client, ip::endpoint{ip::address_v4::loopback(), 1080});
+    },
+    make_deferred_socket(&ctx, sio::ip::tcp::v4()));
+
+  ::sync_wait(ctx, exec::when_any(accept, connect));
 }

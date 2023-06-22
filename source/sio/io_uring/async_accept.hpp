@@ -35,6 +35,19 @@ namespace sio::io_uring {
     template <class Receiver>
     struct operation_base;
 
+    struct on_stop_requested {
+      stdexec::in_place_stop_source& stop_source_;
+
+      void operator()() const noexcept {
+        stop_source_.request_stop();
+      }
+    };
+
+    template <class Rcvr>
+    using env_t = exec::make_env_t<
+      stdexec::env_of_t<Rcvr>,
+      exec::with_t<stdexec::get_stop_token_t, stdexec::in_place_stop_token>>;
+
     template <class Receiver>
     struct next_receiver {
       using is_receiver = void;
@@ -67,8 +80,10 @@ namespace sio::io_uring {
         complete();
       }
 
-      env_of_t<Receiver> get_env(get_env_t) const noexcept {
-        return stdexec::get_env(op_->rcvr_);
+      env_t<Receiver> get_env(get_env_t) const noexcept {
+        return exec::make_env(
+          stdexec::get_env(op_->rcvr_),
+          exec::with(stdexec::get_stop_token, op_->stop_source_.get_token()));
       }
     };
 
@@ -95,9 +110,9 @@ namespace sio::io_uring {
               op.rcvr_,
               stdexec::then(
                 stdexec::just(fd),
-                [&op, &fd](socket_handle client) noexcept {
+                [&op](socket_handle client) noexcept {
                   op.start_next();
-                  return fd = client;
+                  return client;
                 })),
             async::close(fd));
         });
@@ -109,6 +124,10 @@ namespace sio::io_uring {
       std::atomic<std::size_t> ref_count_{};
       std::atomic<bool> stopped_{false};
       std::variant<std::monostate, std::exception_ptr, std::error_code> error_{};
+      stdexec::in_place_stop_source stop_source_;
+      using callback_type = typename stdexec::stop_token_of_t<
+        stdexec::env_of_t<Receiver>>::template callback_type<on_stop_requested>;
+      std::optional<callback_type> stop_callback_;
 
       operation_base(Receiver rcvr, io_uring::acceptor acceptor) noexcept
         : operation_next<Receiver>{
@@ -141,6 +160,7 @@ namespace sio::io_uring {
         stdexec::sync_wait(
           sio::async::deallocate(get_allocator(), static_cast<next_operation*>(op)));
         if (decrease_ref()) {
+          this->stop_callback_.reset();
           exec::set_value_unless_stopped(static_cast<Receiver&&>(this->rcvr_));
         }
       }
@@ -150,10 +170,12 @@ namespace sio::io_uring {
         if (!stopped_.exchange(true, std::memory_order_relaxed)) {
           error_ = error;
         }
+        stop_source_.request_stop();
       }
 
       void notify_stopped() noexcept {
         stopped_.store(true, std::memory_order_relaxed);
+        stop_source_.request_stop();
       }
 
       void destroy(void* op) {
@@ -178,7 +200,7 @@ namespace sio::io_uring {
 
       void set_value(stdexec::set_value_t, next_operation* client_op) && noexcept {
         try {
-          if (op_->stopped_.load(std::memory_order_relaxed)) {
+          if (op_->stop_source_.stop_requested()) {
             op_->deallocate(client_op);
             return;
           }
@@ -228,12 +250,16 @@ namespace sio::io_uring {
         } catch (...) {
           this->notify_error(std::current_exception());
           if (this->decrease_ref()) {
+            this->stop_callback_.reset();
             exec::set_value_unless_stopped(static_cast<Receiver&&>(this->rcvr_));
           }
         }
       }
 
       void start(start_t) noexcept {
+        this->stop_callback_.emplace(
+          stdexec::get_stop_token(stdexec::get_env(this->rcvr_)),
+          on_stop_requested{this->stop_source_});
         start_next();
       }
     };

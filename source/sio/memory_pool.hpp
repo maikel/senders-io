@@ -60,6 +60,7 @@ namespace sio {
     allocate_operation(Receiver receiver, memory_pool* pool, std::size_t index) noexcept(nothrow_move_constructible<Receiver>)
       : allocate_operation_base{[](allocate_operation_base* self) noexcept {
         auto* op = static_cast<allocate_operation*>(self);
+        op->stop_callback_.reset();
         if (op->result_.index() == 0) {
           if (std::get<0>(op->result_)) {
             stdexec::set_value(static_cast<Receiver&&>(op->receiver_), std::get<0>(op->result_));
