@@ -58,8 +58,8 @@ namespace sio::io_uring {
       return context_;
     }
 
-    static constexpr std::false_type ready() noexcept {
-      return {};
+    bool ready() const noexcept {
+      return fd_ >= 0;
     }
 
     void submit(::io_uring_sqe& sqe) const noexcept;
@@ -118,8 +118,10 @@ namespace sio::io_uring {
   };
 
   struct native_fd_handle {
-    exec::io_uring_context* context_;
-    int fd_;
+    exec::io_uring_context* context_{};
+    int fd_{-1};
+
+    native_fd_handle() noexcept = default;
 
     explicit native_fd_handle(exec::io_uring_context* context, int fd) noexcept
       : context_{context}
@@ -413,7 +415,9 @@ namespace sio::io_uring {
     using const_buffers_type = std::span<const_buffer_type>;
     using extent_type = ::off_t;
 
-    explicit byte_stream(native_fd_handle fd) noexcept
+    using native_fd_handle::native_fd_handle;
+
+    explicit byte_stream(const native_fd_handle& fd) noexcept
       : native_fd_handle{fd} {
     }
 
@@ -464,7 +468,6 @@ namespace sio::io_uring {
     using extent_type = ::off_t;
 
     using byte_stream::byte_stream;
-
     using byte_stream::read_some;
     using byte_stream::read;
     using byte_stream::write_some;
@@ -509,87 +512,6 @@ namespace sio::io_uring {
 
     auto read(async::read_t, buffer_type data, extent_type offset) const noexcept {
       return reduce(buffered_sequence{read_some(async::read_some, data, offset)}, 0ull);
-    }
-  };
-
-  struct acceptor : native_fd_handle {
-    ip::endpoint local_endpoint_;
-
-    acceptor(exec::io_uring_context& context, int fd, const ip::endpoint& local_endpoint) noexcept
-      : native_fd_handle(context, fd)
-      , local_endpoint_(local_endpoint) {
-    }
-  };
-
-  struct accept_submission {
-    int fd_;
-    ip::endpoint local_endpoint_;
-
-    accept_submission(int fd, ip::endpoint local_endpoint) noexcept
-      : fd_{fd}
-      , local_endpoint_(static_cast<ip::endpoint&&>(local_endpoint)) {
-    }
-
-    static constexpr std::false_type ready() noexcept {
-      return {};
-    }
-
-    void submit(::io_uring_sqe& sqe) const noexcept;
-  };
-
-  template <class Receiver>
-  struct accept_operation_base
-    : stoppable_op_base<Receiver>
-    , accept_submission {
-    accept_operation_base(
-      exec::io_uring_context& context,
-      Receiver receiver,
-      int fd,
-      ip::endpoint local_endpoint) noexcept
-      : stoppable_op_base<Receiver>{context, static_cast<Receiver&&>(receiver)}
-      , accept_submission{fd, static_cast<ip::endpoint&&>(local_endpoint)} {
-    }
-
-    void complete(const ::io_uring_cqe& cqe) noexcept {
-      if (cqe.res >= 0) {
-        stdexec::set_value(
-          static_cast<accept_operation_base&&>(*this).receiver(),
-          byte_stream{
-            native_fd_handle{this->context(), cqe.res}
-        });
-      } else {
-        SIO_ASSERT(cqe.res < 0);
-        stdexec::set_error(
-          static_cast<accept_operation_base&&>(*this).receiver(),
-          std::error_code(-cqe.res, std::system_category()));
-      }
-    }
-  };
-
-  template <class Receiver>
-  using accept_operation = stoppable_task_facade<accept_operation_base<Receiver>>;
-
-  struct accept_sender {
-    using is_sender = void;
-
-    using completion_signatures = stdexec::completion_signatures<
-      stdexec::set_value_t(byte_stream&&),
-      stdexec::set_error_t(std::error_code),
-      stdexec::set_stopped_t()>;
-
-    exec::io_uring_context* context_;
-    int fd_;
-    ip::endpoint local_endpoint_;
-
-    template <stdexec::receiver_of<completion_signatures> Receiver>
-    accept_operation<Receiver>
-      connect(stdexec::connect_t, Receiver rcvr) noexcept(nothrow_decay_copyable<Receiver>) {
-      return accept_operation<Receiver>{
-        std::in_place,
-        *context_,
-        static_cast<Receiver&&>(rcvr),
-        fd_,
-        static_cast<ip::endpoint&&>(local_endpoint_)};
     }
   };
 

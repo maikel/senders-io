@@ -47,7 +47,8 @@ namespace sio::io_uring {
         return {};
       }
 
-      void submit(::io_uring_sqe&) noexcept {}
+      void submit(::io_uring_sqe&) noexcept {
+      }
 
       void complete(const ::io_uring_cqe&) noexcept;
     };
@@ -67,11 +68,12 @@ namespace sio::io_uring {
         stdexec::set_error_t(std::error_code)>;
 
       template <class Receiver>
-      auto
-        connect(stdexec::connect_t, Receiver rcvr) const noexcept(nothrow_move_constructible<Receiver>) {
-        return operation<Protocol, Receiver>{std::in_place, *context_, protocol_, static_cast<Receiver&&>(rcvr)};
+      auto connect(stdexec::connect_t, Receiver rcvr) const
+        noexcept(nothrow_move_constructible<Receiver>) {
+        return operation<Protocol, Receiver>{
+          std::in_place, *context_, protocol_, static_cast<Receiver&&>(rcvr)};
       }
- 
+
       env get_env(stdexec::get_env_t) const noexcept {
         return {context_->get_scheduler()};
       }
@@ -143,6 +145,8 @@ namespace sio::io_uring {
   }
 
   struct socket_handle : byte_stream {
+    using byte_stream::byte_stream;
+
     connect_::sender connect(async::connect_t, ip::endpoint peer_endpoint) const noexcept {
       return {this->context_, peer_endpoint, fd_};
     }
@@ -181,10 +185,89 @@ namespace sio::io_uring {
       } else {
         stdexec::set_value(
           static_cast<Receiver&&>(receiver_),
-          socket_handle{
-            byte_stream{native_fd_handle{context_, rc}}
-        });
+          socket_handle{byte_stream{native_fd_handle{context_, rc}}});
       }
     }
   }
+
+  struct acceptor : native_fd_handle {
+    ip::endpoint local_endpoint_;
+
+    acceptor(exec::io_uring_context& context, int fd, const ip::endpoint& local_endpoint) noexcept
+      : native_fd_handle(context, fd)
+      , local_endpoint_(local_endpoint) {
+    }
+  };
+
+  struct accept_submission {
+    int fd_;
+    ip::endpoint local_endpoint_;
+    socklen_t addrlen{};
+
+    accept_submission(int fd, ip::endpoint local_endpoint) noexcept
+      : fd_{fd}
+      , local_endpoint_(static_cast<ip::endpoint&&>(local_endpoint))
+      , addrlen(local_endpoint_.size()) {
+    }
+
+    static constexpr std::false_type ready() noexcept {
+      return {};
+    }
+
+    void submit(::io_uring_sqe& sqe) const noexcept;
+  };
+
+  template <class Receiver>
+  struct accept_operation_base
+    : stoppable_op_base<Receiver>
+    , accept_submission {
+    accept_operation_base(
+      exec::io_uring_context& context,
+      Receiver receiver,
+      int fd,
+      ip::endpoint local_endpoint) noexcept
+      : stoppable_op_base<Receiver>{context, static_cast<Receiver&&>(receiver)}
+      , accept_submission{fd, static_cast<ip::endpoint&&>(local_endpoint)} {
+    }
+
+    void complete(const ::io_uring_cqe& cqe) noexcept {
+      if (cqe.res >= 0) {
+        stdexec::set_value(
+          static_cast<accept_operation_base&&>(*this).receiver(),
+          socket_handle{this->context(), cqe.res});
+      } else {
+        SIO_ASSERT(cqe.res < 0);
+        stdexec::set_error(
+          static_cast<accept_operation_base&&>(*this).receiver(),
+          std::error_code(-cqe.res, std::system_category()));
+      }
+    }
+  };
+
+  template <class Receiver>
+  using accept_operation = stoppable_task_facade<accept_operation_base<Receiver>>;
+
+  struct accept_sender {
+    using is_sender = void;
+
+    using completion_signatures = stdexec::completion_signatures<
+      stdexec::set_value_t(socket_handle),
+      stdexec::set_error_t(std::error_code),
+      stdexec::set_stopped_t()>;
+
+    exec::io_uring_context* context_;
+    int fd_;
+    ip::endpoint local_endpoint_;
+
+    template <stdexec::receiver_of<completion_signatures> Receiver>
+    accept_operation<Receiver>
+      connect(stdexec::connect_t, Receiver rcvr) noexcept(nothrow_decay_copyable<Receiver>) {
+      return accept_operation<Receiver>{
+        std::in_place,
+        *context_,
+        static_cast<Receiver&&>(rcvr),
+        fd_,
+        static_cast<ip::endpoint&&>(local_endpoint_)};
+    }
+  };
 }

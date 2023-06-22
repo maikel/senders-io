@@ -11,6 +11,7 @@
 #include <exec/linux/io_uring_context.hpp>
 #include <exec/sequence_senders.hpp>
 #include <exec/task.hpp>
+#include <exec/when_any.hpp>
 
 #include <catch2/catch.hpp>
 #include <stdexec/execution.hpp>
@@ -20,8 +21,7 @@ using namespace sio;
 
 template <stdexec::sender Sender>
 void sync_wait(exec::io_uring_context& context, Sender&& sender) {
-  stdexec::sync_wait(
-    stdexec::when_all(std::forward<Sender>(sender), context.run(exec::until::empty)));
+  stdexec::sync_wait(exec::when_any(std::forward<Sender>(sender), context.run()));
 }
 
 TEST_CASE("async_accept concept", "[async_accept]") {
@@ -31,11 +31,14 @@ TEST_CASE("async_accept concept", "[async_accept]") {
   ip::endpoint ep{ip::address_v4::any(), 80};
   io_uring::acceptor acceptor{ctx, -1, ep};
 
-  auto sequence = async_accept(acceptor);
+  auto sequence = sio::io_uring::async_accept(acceptor);
   STATIC_REQUIRE(exec::sequence_sender<decltype(sequence)>);
 
   auto op = exec::subscribe(std::move(sequence), any_receiver{});
   STATIC_REQUIRE(stdexec::operation_state<decltype(op)>);
+  stdexec::start(op);
+
+  ctx.run_until_empty();
 }
 
 TEST_CASE("async_accept should work", "[async_accept]") {
@@ -45,7 +48,6 @@ TEST_CASE("async_accept should work", "[async_accept]") {
   using namespace sio::io_uring;
 
   exec::io_uring_context ctx;
-  ctx.run_until_empty();
 
   ip::endpoint ep{ip::address_v4::any(), 1080};
   int fd = ::socket(AF_INET, SOCK_STREAM, 0);
@@ -56,5 +58,5 @@ TEST_CASE("async_accept should work", "[async_accept]") {
   io_uring::acceptor acceptor{ctx, fd, ep};
 
   stdexec::sender auto sndr = ignore_all(async_accept(acceptor));
-  // ::sync_wait(ctx, std::move(sndr));
+  ::sync_wait(ctx, std::move(sndr));
 }
