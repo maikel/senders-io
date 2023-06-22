@@ -78,28 +78,30 @@ namespace sio::io_uring {
       io_uring::acceptor acceptor_;
 
       operation_next(Receiver rcvr, io_uring::acceptor acceptor)
-        : rcvr_(static_cast<Receiver&&>(rcvr)), acceptor_(static_cast<io_uring::acceptor&&>(acceptor)) {}
+        : rcvr_(static_cast<Receiver&&>(rcvr))
+        , acceptor_(static_cast<io_uring::acceptor&&>(acceptor)) {
+      }
 
       virtual void start_next() noexcept = 0;
     };
 
-      template <class Receiver>
-      auto next_accept_sender(operation_next<Receiver>& op) {
-        return let_value(just(socket_handle{op.acceptor_.context_, -1}), [&op](socket_handle& fd) {
+    template <class Receiver>
+    auto next_accept_sender(operation_next<Receiver>& op) {
+      return stdexec::let_value(
+        accept_sender{op.acceptor_.context_, op.acceptor_.fd_, op.acceptor_.local_endpoint_},
+        [&op](socket_handle fd) {
           return exec::finally(
             exec::set_next(
               op.rcvr_,
-              then(
-                accept_sender{op.acceptor_.context_, op.acceptor_.fd_, op.acceptor_.local_endpoint_},
+              stdexec::then(
+                stdexec::just(fd),
                 [&op, &fd](socket_handle client) noexcept {
                   op.start_next();
                   return fd = client;
                 })),
-            stdexec::let_value(just(std::ref(fd)), [](socket_handle& fd) {
-              return async::close(fd);
-            }));
+            async::close(fd));
         });
-      }
+    }
 
     template <class Receiver>
     struct operation_base : operation_next<Receiver> {
@@ -109,7 +111,9 @@ namespace sio::io_uring {
       std::variant<std::monostate, std::exception_ptr, std::error_code> error_{};
 
       operation_base(Receiver rcvr, io_uring::acceptor acceptor) noexcept
-        : operation_next<Receiver>{static_cast<Receiver&&>(rcvr), static_cast<io_uring::acceptor&&>(acceptor)} {
+        : operation_next<Receiver>{
+          static_cast<Receiver&&>(rcvr),
+          static_cast<io_uring::acceptor&&>(acceptor)} {
       }
 
       using next_accept_sender_of_t =
@@ -122,6 +126,10 @@ namespace sio::io_uring {
         ref_count_.fetch_add(1, std::memory_order_relaxed);
       }
 
+      bool decrease_ref() noexcept {
+        return ref_count_.fetch_sub(1, std::memory_order_relaxed) == 1;
+      }
+
       auto get_allocator() const noexcept {
         using Alloc = decltype(sio::async::get_allocator(stdexec::get_env(this->rcvr_)));
         using NextAlloc = std::allocator_traits<Alloc>::template rebind_alloc<next_operation>;
@@ -129,9 +137,10 @@ namespace sio::io_uring {
       }
 
       void deallocate(void* op) noexcept {
+        SIO_ASSERT(op != nullptr);
         stdexec::sync_wait(
           sio::async::deallocate(get_allocator(), static_cast<next_operation*>(op)));
-        if (ref_count_.fetch_sub(1, std::memory_order_relaxed) == 1) {
+        if (decrease_ref()) {
           exec::set_value_unless_stopped(static_cast<Receiver&&>(this->rcvr_));
         }
       }
@@ -210,13 +219,17 @@ namespace sio::io_uring {
 
       void start_next() noexcept override {
         try {
+          this->increase_ref();
           stdexec::start(op_.emplace(__conv{[&] {
             auto alloc = this->get_allocator();
             return stdexec::connect(
               sio::async::allocate(alloc, 1), allocation_receiver<Receiver>{this});
           }}));
         } catch (...) {
-          stdexec::set_error(static_cast<Receiver&&>(this->rcvr_), std::current_exception());
+          this->notify_error(std::current_exception());
+          if (this->decrease_ref()) {
+            exec::set_value_unless_stopped(static_cast<Receiver&&>(this->rcvr_));
+          }
         }
       }
 
@@ -234,7 +247,7 @@ namespace sio::io_uring {
         set_error_t(std::exception_ptr),
         set_stopped_t()>;
 
-      io_uring::acceptor& acceptor_;
+      io_uring::acceptor acceptor_;
 
       // !!!! The commented lines cause compilation errors.
       template <
@@ -243,10 +256,6 @@ namespace sio::io_uring {
       static operation<Receiver> subscribe(Self&& self, exec::subscribe_t, Receiver rcvr) //
         noexcept(nothrow_decay_copyable<Receiver>) {
         return {static_cast<Receiver&&>(rcvr), self.acceptor_};
-      }
-
-      auto get_sequence_env(exec::get_sequence_env_t) const noexcept {
-        return exec::make_env(exec::with(exec::parallelism, exec::lock_step));
       }
     };
 

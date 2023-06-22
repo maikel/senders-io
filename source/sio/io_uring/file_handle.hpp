@@ -58,9 +58,7 @@ namespace sio::io_uring {
       return context_;
     }
 
-    bool ready() const noexcept {
-      return fd_ >= 0;
-    }
+    static constexpr std::false_type ready() noexcept { return {}; }
 
     void submit(::io_uring_sqe& sqe) const noexcept;
   };
