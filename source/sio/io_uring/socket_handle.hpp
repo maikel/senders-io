@@ -19,6 +19,7 @@
 
 #include "../net_concepts.hpp"
 #include "../net/ip/endpoint.hpp"
+#include "../deferred.hpp"
 
 namespace sio::io_uring {
   struct socket_handle;
@@ -183,21 +184,10 @@ namespace sio::io_uring {
         stdexec::set_error(
           static_cast<Receiver&&>(receiver_), std::error_code(errno, std::system_category()));
       } else {
-        stdexec::set_value(
-          static_cast<Receiver&&>(receiver_),
-          socket_handle{byte_stream{native_fd_handle{context_, rc}}});
+        stdexec::set_value(static_cast<Receiver&&>(receiver_), socket_handle{context_, rc});
       }
     }
   }
-
-  struct acceptor : native_fd_handle {
-    ip::endpoint local_endpoint_;
-
-    acceptor(exec::io_uring_context& context, int fd, const ip::endpoint& local_endpoint) noexcept
-      : native_fd_handle(context, fd)
-      , local_endpoint_(local_endpoint) {
-    }
-  };
 
   struct accept_submission {
     int fd_;
@@ -270,4 +260,76 @@ namespace sio::io_uring {
         static_cast<ip::endpoint&&>(local_endpoint_)};
     }
   };
+
+  struct acceptor_handle : native_fd_handle {
+    ip::endpoint local_endpoint_;
+
+    acceptor_handle(
+      exec::io_uring_context& context,
+      int fd,
+      const ip::endpoint& local_endpoint) noexcept
+      : native_fd_handle(context, fd)
+      , local_endpoint_(local_endpoint) {
+    }
+
+    accept_sender accept_once(async::accept_once_t) const noexcept {
+      return accept_sender{context_, fd_, local_endpoint_};
+    }
+  };
+
+  template <class Protocol>
+  struct acceptor_resource {
+    exec::io_uring_context& context_;
+    Protocol protocol_;
+    ip::endpoint local_endpoint_;
+
+    explicit acceptor_resource(
+      exec::io_uring_context& context,
+      Protocol protocol,
+      ip::endpoint ep) noexcept
+      : context_{context}
+      , protocol_{protocol}
+      , local_endpoint_(ep) {
+    }
+
+    explicit acceptor_resource(
+      exec::io_uring_context* context,
+      Protocol protocol,
+      ip::endpoint ep) noexcept
+      : context_{*context}
+      , protocol_{protocol}
+      , local_endpoint_(ep) {
+    }
+
+    void throw_on_error(int rc) {
+      std::error_code ec{rc, std::system_category()};
+      if (ec) {
+        throw std::system_error(ec);
+      }
+    }
+
+    auto open(async::open_t) noexcept {
+      return stdexec::then(
+        socket_resource<Protocol>{context_, protocol_}.open(async::open),
+        [this](socket_handle handle) {
+          int one = 1;
+          throw_on_error(::setsockopt(
+            handle.fd_, SOL_SOCKET, SO_REUSEADDR, &one, static_cast<socklen_t>(sizeof(int))));
+          throw_on_error(::bind(handle.fd_, local_endpoint_.data(), local_endpoint_.size()));
+          throw_on_error(::listen(handle.fd_, 10));
+          return acceptor_handle{context_, handle.get(), local_endpoint_};
+        });
+    }
+  };
+
+  template <class Proto>
+  auto make_deferred_socket(exec::io_uring_context* ctx, Proto proto) {
+    return make_deferred<socket_resource<Proto>>(ctx, proto);
+  }
+
+  template <class Proto>
+  auto make_deferred_acceptor(exec::io_uring_context* ctx, Proto proto, ip::endpoint ep) {
+    return make_deferred<acceptor_resource<Proto>>(ctx, proto, ep);
+  }
+
 }

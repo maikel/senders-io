@@ -1,5 +1,5 @@
 #include "sio/io_uring/file_handle.hpp"
-#include "sio/io_uring/async_accept.hpp"
+#include "sio/io_uring/socket_handle.hpp"
 #include "sio/net/ip/address.hpp"
 #include "sio/net/ip/endpoint.hpp"
 #include "sio/net/ip/tcp.hpp"
@@ -27,12 +27,11 @@ void sync_wait(exec::io_uring_context& context, Sender&& sender) {
 
 TEST_CASE("async_accept concept", "[async_accept]") {
   exec::io_uring_context ctx;
-  ctx.run_until_empty();
 
   ip::endpoint ep{ip::address_v4::any(), 80};
-  io_uring::acceptor acceptor{ctx, -1, ep};
+  io_uring::acceptor_handle acceptor{ctx, -1, ep};
 
-  auto sequence = sio::io_uring::async_accept(acceptor);
+  auto sequence = sio::async::accept(acceptor);
   STATIC_REQUIRE(exec::sequence_sender<decltype(sequence)>);
 
   auto op = exec::subscribe(std::move(sequence), any_receiver{});
@@ -40,11 +39,6 @@ TEST_CASE("async_accept concept", "[async_accept]") {
   stdexec::start(op);
 
   ctx.run_until_empty();
-}
-
-template <class Proto>
-auto make_deferred_socket(exec::io_uring_context* ctx, Proto proto) {
-  return sio::make_deferred<sio::io_uring::socket_resource<Proto>>(ctx, proto);
 }
 
 TEST_CASE("async_accept should work", "[async_accept]") {
@@ -55,27 +49,15 @@ TEST_CASE("async_accept should work", "[async_accept]") {
 
   exec::io_uring_context ctx;
 
-  ip::endpoint ep{ip::address_v4::any(), 1080};
-  int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-  CHECK(fd != -1);
-  CHECK(::bind(fd, ep.data(), ep.size()) != -1);
-  CHECK(::listen(fd, 1024) != -1);
+  stdexec::sender auto accept = sio::async::use_resources(
+    [](io_uring::acceptor_handle acceptor) { return ignore_all(sio::async::accept(acceptor)); },
+    io_uring::make_deferred_acceptor(&ctx, ip::tcp::v4(), ip::endpoint{ip::address_v4::any(), 1080}));
 
-  io_uring::acceptor acceptor{ctx, fd, ep};
-
-  stdexec::sender auto accept = ignore_all(async_accept(acceptor));
-
-  int client = ::socket(AF_INET, SOCK_STREAM, 0);
-  CHECK(client != -1);
-  io_uring::socket_handle client_handle{ctx, client};
-
-  io_uring::io_scheduler scheduler{&ctx};
-
-  stdexec::sender auto connect = sio::async::use_resources(
+  stdexec::sender auto connect = async::use_resources(
     [](sio::io_uring::socket_handle client) {
       return sio::async::connect(client, ip::endpoint{ip::address_v4::loopback(), 1080});
     },
-    make_deferred_socket(&ctx, sio::ip::tcp::v4()));
+    sio::io_uring::make_deferred_socket(&ctx, ip::tcp::v4()));
 
   ::sync_wait(ctx, exec::when_any(accept, connect));
 }
