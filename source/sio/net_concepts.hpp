@@ -229,6 +229,9 @@ namespace sio::async {
     template <class Acceptor, class Receiver>
     struct operation_base;
 
+    template <class Acceptor, class Receiver>
+    union client_operation;
+
     struct on_stop_requested {
       stdexec::in_place_stop_source& stop_source_;
 
@@ -247,7 +250,7 @@ namespace sio::async {
       using is_receiver = void;
 
       operation_base<Acceptor, Receiver>* op_;
-      void* client_op_;
+      client_operation<Acceptor, Receiver>* client_op_;
 
       void complete() noexcept {
         operation_base<Acceptor, Receiver>* op = op_;
@@ -339,25 +342,22 @@ namespace sio::async {
     using next_accept_sender_of_t =
       decltype(next_accept_sender(*(operation_next<Acceptor, Receiver>*) nullptr));
 
-    template <class Acceptor, class Receiver>
-    union Operation;
-
     template <class Receiver>
     using allocator_of_t =
       decltype(async::get_allocator(stdexec::get_env(std::declval<Receiver>())));
 
     template <class Acceptor, class Receiver>
     using allocator_t = typename std::allocator_traits<
-      allocator_of_t<Receiver>>::template rebind_alloc<Operation<Acceptor, Receiver>>;
+      allocator_of_t<Receiver>>::template rebind_alloc<client_operation<Acceptor, Receiver>>;
 
     template <class Acceptor, class Receiver>
     using deallocate_sender_t = decltype(async::destroy_and_deallocate(
       std::declval<allocator_t<Acceptor, Receiver>>(),
-      (Operation<Acceptor, Receiver>*) nullptr));
+      (client_operation<Acceptor, Receiver>*) nullptr));
 
     template <class Acceptor, class Receiver>
-    union Operation {
-      ~Operation() {
+    union client_operation {
+      ~client_operation() {
         std::destroy_at(&delete_op_);
       }
 
@@ -412,9 +412,8 @@ namespace sio::async {
           sio::async::get_allocator(stdexec::get_env(this->rcvr_)));
       }
 
-      void deallocate(void* ptr) noexcept {
-        SIO_ASSERT(ptr != nullptr);
-        Operation<Acceptor, Receiver>* op = static_cast<Operation<Acceptor, Receiver>*>(ptr);
+      void deallocate(client_operation<Acceptor, Receiver>* op) noexcept {
+        SIO_ASSERT(op != nullptr);
         std::construct_at(&op->delete_op_, stdexec::__conv{[&] {
             return stdexec::connect(
             sio::async::destroy_and_deallocate(get_allocator(), op),
@@ -438,7 +437,7 @@ namespace sio::async {
       }
 
       void destroy(void* op) {
-        std::destroy_at(&static_cast<Operation<Acceptor, Receiver>*>(op)->next_op_);
+        std::destroy_at(&static_cast<client_operation<Acceptor, Receiver>*>(op)->next_op_);
       }
     };
 
@@ -450,7 +449,7 @@ namespace sio::async {
         return stdexec::get_env(op_->rcvr_);
       }
 
-      void set_value(stdexec::set_value_t, Operation<Acceptor, Receiver>* client_op) && noexcept {
+      void set_value(stdexec::set_value_t, client_operation<Acceptor, Receiver>* client_op) && noexcept {
         try {
           if (op_->stop_source_.stop_requested()) {
             op_->deallocate(client_op);
@@ -470,10 +469,12 @@ namespace sio::async {
       template <class Error>
       void set_error(stdexec::set_error_t, Error&& err) && noexcept {
         op_->notify_error(static_cast<Error&&>(err));
+        op_->decrease_ref();
       }
 
       void set_stopped(stdexec::set_stopped_t) && noexcept {
         op_->notify_stopped();
+        op_->decrease_ref();
       }
     };
 
