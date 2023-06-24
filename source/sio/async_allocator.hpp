@@ -70,10 +70,65 @@ namespace sio::async {
 
   inline constexpr deallocate_t deallocate{};
 
+  struct destroy_and_deallocate_t;
+  extern const destroy_and_deallocate_t destroy_and_deallocate;
+
+  namespace destroy_and_deallocate_ {
+    template <class Alloc, class... Args>
+    concept has_member_cust = requires(Alloc alloc, Args&&... args) {
+      { alloc.destroy_and_deallocate(destroy_and_deallocate, static_cast<Args&&>(args)...) };
+    };
+
+    template <class Alloc, class... Args>
+    concept nothrow_member_cust = requires(Alloc alloc, Args&&... args) {
+      { alloc.destroy_and_deallocate(destroy_and_deallocate, static_cast<Args&&>(args)...) } noexcept;
+    };
+  }
+
+  struct destroy_and_deallocate_t {
+    template <class Alloc, class... Args>
+      requires destroy_and_deallocate_::has_member_cust<Alloc, Args...>
+    constexpr auto operator()(Alloc alloc, Args&&... args) const
+      noexcept(destroy_and_deallocate_::nothrow_member_cust<Alloc, Args...>) {
+      return alloc.destroy_and_deallocate(destroy_and_deallocate, static_cast<Args&&>(args)...);
+    }
+  };
+
+  inline constexpr destroy_and_deallocate_t destroy_and_deallocate{};
+
   template <class Alloc>
   concept allocator = requires(Alloc alloc, std::size_t size, void* ptr) {
     { allocate(alloc, size) };
     { deallocate(alloc, ptr) };
+    { destroy_and_deallocate(alloc, ptr) };
+  };
+
+  template <class T, class Receiver>
+  struct delete_operation {
+    Receiver rcvr_;
+    T* pointer_;
+
+    void start(stdexec::start_t) noexcept {
+      Receiver rcvr = static_cast<Receiver&&>(rcvr_);
+      T* pointer = pointer_;
+      std::destroy_at(pointer);
+      // We might have detroyed this operation itself.
+      // dont touch any member variables anymore
+      std::allocator<T>().deallocate(pointer, 1);
+      stdexec::set_value(static_cast<Receiver&&>(rcvr));
+    }
+  };
+
+  template <class T>
+  struct delete_sender {
+    using completion_signatures = stdexec::completion_signatures<stdexec::set_value_t()>;
+
+    T* pointer_;
+
+    template <class Receiver>
+    delete_operation<T, Receiver> connect(stdexec::connect_t, Receiver rcvr) const noexcept {
+      return {static_cast<Receiver&&>(rcvr), pointer_};
+    }
   };
 
   template <class T>
@@ -96,6 +151,10 @@ namespace sio::async {
       return stdexec::then(stdexec::just(ptr), [](T* ptr) noexcept {
         std::allocator<T>().deallocate(ptr, 1);
       });
+    }
+
+    delete_sender<T> destroy_and_deallocate(destroy_and_deallocate_t, T* ptr) const {
+      return {ptr};
     }
   };
 
