@@ -58,7 +58,9 @@ namespace sio::io_uring {
       return context_;
     }
 
-    static constexpr std::false_type ready() noexcept { return {}; }
+    static constexpr std::false_type ready() noexcept {
+      return {};
+    }
 
     void submit(::io_uring_sqe& sqe) const noexcept;
   };
@@ -253,7 +255,8 @@ namespace sio::io_uring {
 
     void complete(const ::io_uring_cqe& cqe) noexcept {
       if (cqe.res >= 0) {
-        stdexec::set_value(static_cast<read_operation_base&&>(*this).receiver(), cqe.res);
+        stdexec::set_value(
+          static_cast<read_operation_base&&>(*this).receiver(), static_cast<std::size_t>(cqe.res));
       } else {
         STDEXEC_ASSERT(cqe.res < 0);
         stdexec::set_error(
@@ -347,7 +350,8 @@ namespace sio::io_uring {
 
     void complete(const ::io_uring_cqe& cqe) noexcept {
       if (cqe.res >= 0) {
-        stdexec::set_value(static_cast<write_operation_base&&>(*this).receiver(), cqe.res);
+        stdexec::set_value(
+          static_cast<write_operation_base&&>(*this).receiver(), static_cast<std::size_t>(cqe.res));
       } else {
         STDEXEC_ASSERT(cqe.res < 0);
         stdexec::set_error(
