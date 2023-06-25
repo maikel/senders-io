@@ -1,7 +1,8 @@
 #include "sio/io_uring/file_handle.hpp"
-#include "sio/io_uring/async_accept.hpp"
+#include "sio/io_uring/socket_handle.hpp"
 #include "sio/net/ip/address.hpp"
 #include "sio/net/ip/endpoint.hpp"
+#include "sio/net/ip/tcp.hpp"
 #include "sio/sequence/ignore_all.hpp"
 #include "sio/sequence/iterate.hpp"
 #include "sio/sequence/sequence_concepts.hpp"
@@ -11,6 +12,7 @@
 #include <exec/linux/io_uring_context.hpp>
 #include <exec/sequence_senders.hpp>
 #include <exec/task.hpp>
+#include <exec/when_any.hpp>
 
 #include <catch2/catch.hpp>
 #include <stdexec/execution.hpp>
@@ -20,22 +22,23 @@ using namespace sio;
 
 template <stdexec::sender Sender>
 void sync_wait(exec::io_uring_context& context, Sender&& sender) {
-  stdexec::sync_wait(
-    stdexec::when_all(std::forward<Sender>(sender), context.run(exec::until::empty)));
+  stdexec::sync_wait(exec::when_any(std::forward<Sender>(sender), context.run()));
 }
 
 TEST_CASE("async_accept concept", "[async_accept]") {
   exec::io_uring_context ctx;
-  ctx.run_until_empty();
 
   ip::endpoint ep{ip::address_v4::any(), 80};
-  io_uring::acceptor acceptor{ctx, -1, ep};
+  io_uring::acceptor_handle acceptor{ctx, -1, ep};
 
-  auto sequence = async_accept(acceptor);
+  auto sequence = sio::async::accept(acceptor);
   STATIC_REQUIRE(exec::sequence_sender<decltype(sequence)>);
 
   auto op = exec::subscribe(std::move(sequence), any_receiver{});
   STATIC_REQUIRE(stdexec::operation_state<decltype(op)>);
+  stdexec::start(op);
+
+  ctx.run_until_empty();
 }
 
 TEST_CASE("async_accept should work", "[async_accept]") {
@@ -45,16 +48,16 @@ TEST_CASE("async_accept should work", "[async_accept]") {
   using namespace sio::io_uring;
 
   exec::io_uring_context ctx;
-  ctx.run_until_empty();
 
-  ip::endpoint ep{ip::address_v4::any(), 1080};
-  int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-  CHECK(fd != -1);
-  CHECK(::bind(fd, ep.data(), ep.size()) != -1);
-  CHECK(::listen(fd, 1024) != -1);
+  stdexec::sender auto accept = sio::async::use_resources(
+    [](io_uring::acceptor_handle acceptor) { return ignore_all(sio::async::accept(acceptor)); },
+    io_uring::make_deferred_acceptor(&ctx, ip::tcp::v4(), ip::endpoint{ip::address_v4::any(), 1080}));
 
-  io_uring::acceptor acceptor{ctx, fd, ep};
+  stdexec::sender auto connect = async::use_resources(
+    [](sio::io_uring::socket_handle client) {
+      return sio::async::connect(client, ip::endpoint{ip::address_v4::loopback(), 1080});
+    },
+    sio::io_uring::make_deferred_socket(&ctx, ip::tcp::v4()));
 
-  stdexec::sender auto sndr = ignore_all(async_accept(acceptor));
-  // ::sync_wait(ctx, std::move(sndr));
+  ::sync_wait(ctx, exec::when_any(accept, connect));
 }

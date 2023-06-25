@@ -2,6 +2,7 @@
 #include <sio/sequence/reduce.hpp>
 
 #include <exec/task.hpp>
+#include <exec/when_any.hpp>
 
 #include <iostream>
 
@@ -52,5 +53,5 @@ int main() {
   sio::io_uring::native_fd_handle stdin_handle{context, STDIN_FILENO};
   sio::io_uring::byte_stream in(stdin_handle);
   static_assert(sio::async::byte_stream<sio::io_uring::byte_stream>);
-  stdexec::sync_wait(stdexec::when_all(echo(in, out), context.run(exec::until::empty)));
+  stdexec::sync_wait(exec::when_any(echo(in, out), context.run()));
 }

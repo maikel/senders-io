@@ -393,6 +393,7 @@ namespace sio {
           op_->notify_stop();
           return;
         }
+        op_->stop_callback_.reset();
         auto token = stdexec::get_stop_token(stdexec::get_env(op_->receiver_));
         if (token.stop_requested()) {
           stdexec::set_stopped(static_cast<Receiver&&>(op_->receiver_));
@@ -415,6 +416,7 @@ namespace sio {
           op_->notify_stop();
           return;
         }
+        op_->stop_callback_.reset();
         if (op_->stop_source_.stop_requested()) {
           exec::set_value_unless_stopped(static_cast<Receiver&&>(op_->receiver_));
         } else {
@@ -429,6 +431,7 @@ namespace sio {
           op_->notify_error(static_cast<Error&&>(error));
           return;
         }
+        op_->stop_callback_.reset();
         stdexec::set_error(static_cast<Receiver&&>(op_->receiver_), static_cast<Error&&>(error));
       }
 
@@ -536,6 +539,10 @@ namespace sio {
       }
 
       void start(stdexec::start_t) noexcept {
+        this->stop_callback_.emplace(
+          stdexec::get_stop_token(stdexec::get_env(this->receiver_)),
+          on_stop_requested{this->stop_source_}
+        );
         std::apply([](auto&... ops) { (stdexec::start(ops), ...); }, op_states_);
       }
     };

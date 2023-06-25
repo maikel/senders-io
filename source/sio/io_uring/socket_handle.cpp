@@ -27,4 +27,13 @@ namespace sio::io_uring {
       sqe = sqe_;
     }
   }
+
+  void accept_submission::submit(::io_uring_sqe& sqe) const noexcept {
+    ::io_uring_sqe sqe_{};
+    sqe_.opcode = IORING_OP_ACCEPT;
+    sqe_.fd = fd_;
+    sqe_.addr = std::bit_cast<__u64>(local_endpoint_.data());
+    sqe_.addr2 = std::bit_cast<__u64>(&addrlen);
+    sqe = sqe_;
+  }
 }
