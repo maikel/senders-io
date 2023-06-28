@@ -28,7 +28,7 @@ namespace sio {
       std::atomic<int> n_pending_ops_;
       [[no_unique_address]] Receiver receiver_;
       [[no_unique_address]] ErrorsVariant errors_{};
-      std::atomic<bool> error_emplaced_{false};
+      std::atomic<int> error_emplaced_{0};
       stdexec::in_place_stop_source stop_source_{};
       // std::optional<default_stop_callback_t> on_receiver_stopped_{};
     };
@@ -48,8 +48,8 @@ namespace sio {
       void complete() noexcept {
         if (op_->n_pending_ops_.fetch_sub(1, std::memory_order_relaxed) == 1) {
           // op_->on_receiver_stopped_.reset();
-          bool error_emplaced = op_->error_emplaced_.load(std::memory_order_acquire);
-          if (error_emplaced) {
+          int error_emplaced = op_->error_emplaced_.load(std::memory_order_acquire);
+          if (error_emplaced == 2) {
             stdexec::set_error(static_cast<Receiver&&>(op_->receiver_), std::move(op_->errors_));
           } else {
             exec::set_value_unless_stopped(static_cast<Receiver&&>(op_->receiver_));
@@ -70,9 +70,10 @@ namespace sio {
         requires callable<stdexec::set_error_t, Receiver&&, Error> //
               && emplaceable<ErrorsVariant, decay_t<Error>, Error>
       void set_error(stdexec::set_error_t, Error&& error) && noexcept {
-        if (!op_->error_emplaced_.exchange(true, std::memory_order_relaxed)) {
+        int expected = 0;
+        if (op_->error_emplaced_.compare_exchange_strong(expected, 1, std::memory_order_relaxed)) {
           op_->errors_.template emplace<decay_t<Error>>(static_cast<Error&&>(error));
-          std::atomic_thread_fence(std::memory_order_release);
+          op_->error_emplaced_.store(2, std::memory_order_release);
         }
         op_->stop_source_.request_stop();
         complete();
