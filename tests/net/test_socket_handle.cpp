@@ -24,7 +24,7 @@ TEST_CASE("socket_handle - Open a socket", "[socket_handle]") {
   sync_wait(
     context,
     sio::async::use_resources(
-      [](sio::io_uring::socket_handle socket) {
+      [](auto socket) {
         CHECK(socket.get() > 0);
         return stdexec::just();
       },

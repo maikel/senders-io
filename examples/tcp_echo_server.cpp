@@ -20,7 +20,10 @@ exec::variant_sender<ThenSender, ElseSender>
   return otherwise;
 }
 
-auto echo_input(sio::io_uring::socket_handle client) {
+using tcp_socket = sio::io_uring::socket_handle<sio::ip::tcp>;
+using tcp_acceptor = sio::io_uring::acceptor_handle<sio::ip::tcp>;
+
+auto echo_input(tcp_socket client) {
   return stdexec::let_value(
     stdexec::just(client, std::array<std::byte, 1024>{}),
     [](auto socket, std::span<std::byte> buffer) {
@@ -43,9 +46,9 @@ int main() {
     &context, sio::ip::tcp::v4(), sio::ip::endpoint{sio::ip::address_v4::any(), 1080});
 
   auto accept_connections = sio::async::use_resources(
-    [&](sio::io_uring::acceptor_handle acceptor) {
+    [&](tcp_acceptor acceptor) {
       return sio::async::accept(acceptor) //
-           | sio::let_value_each([](sio::io_uring::socket_handle client) {
+           | sio::let_value_each([](tcp_socket client) {
                return echo_input(client);
              })
            | sio::ignore_all();
