@@ -56,7 +56,6 @@ target_sources(sio PUBLIC
     source/sio/assert.hpp
     source/sio/async_allocator.hpp
     source/sio/async_resource.hpp
-    source/sio/channel.hpp
     source/sio/concepts.hpp
     source/sio/deferred.hpp
     source/sio/intrusive_list.hpp
