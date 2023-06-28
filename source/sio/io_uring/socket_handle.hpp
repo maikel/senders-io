@@ -18,7 +18,7 @@
 #include "./file_handle.hpp"
 
 #include "../net_concepts.hpp"
-#include "../net/ip/endpoint.hpp"
+#include "../ip/endpoint.hpp"
 #include "../deferred.hpp"
 
 namespace sio::io_uring {
@@ -316,7 +316,7 @@ namespace sio::io_uring {
           throw_on_error(::setsockopt(
             handle.fd_, SOL_SOCKET, SO_REUSEADDR, &one, static_cast<socklen_t>(sizeof(int))));
           throw_on_error(::bind(handle.fd_, local_endpoint_.data(), local_endpoint_.size()));
-          throw_on_error(::listen(handle.fd_, 10));
+          throw_on_error(::listen(handle.fd_, 16));
           return acceptor_handle{context_, handle.get(), local_endpoint_};
         });
     }

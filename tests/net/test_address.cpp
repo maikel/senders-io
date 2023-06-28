@@ -23,7 +23,7 @@
 
 #include <catch2/catch.hpp>
 
-#include "sio/net/ip/address.hpp"
+#include "sio/ip/address.hpp"
 
 using namespace sio::ip;
 

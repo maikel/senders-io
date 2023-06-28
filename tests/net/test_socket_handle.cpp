@@ -1,7 +1,7 @@
 #include "sio/io_uring/socket_handle.hpp"
 #include "sio/net_concepts.hpp"
 #include "sio/deferred.hpp"
-#include "sio/net/ip/tcp.hpp"
+#include "sio/ip/tcp.hpp"
 
 #include <exec/single_thread_context.hpp>
 #include <exec/when_any.hpp>

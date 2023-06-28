@@ -27,10 +27,10 @@
 #include "./endpoint.hpp"
 
 
-#include "../../assert.hpp"
-#include "../../concepts.hpp"
-#include "../../net_concepts.hpp"
-#include "../../sequence/sequence_concepts.hpp"
+#include "../assert.hpp"
+#include "../concepts.hpp"
+#include "../net_concepts.hpp"
+#include "../sequence/sequence_concepts.hpp"
 
 #include <cstring>
 #include <string>
