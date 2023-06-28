@@ -35,6 +35,8 @@ target_sources(sio PUBLIC
     source/sio/ip/resolve.hpp
     source/sio/ip/tcp.hpp
     source/sio/ip/udp.hpp
+    source/sio/local/stream_protocol.hpp
+    source/sio/local/endpoint.hpp
     source/sio/sequence/any_sequence_of.hpp
     source/sio/sequence/empty_sequence.hpp
     source/sio/sequence/first.hpp

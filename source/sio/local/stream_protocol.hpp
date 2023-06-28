@@ -30,19 +30,19 @@ namespace sio::local {
     }
 
     int protocol() const {
-      return AF_LOCAL;
+      return 0;
     }
 
     int family() const {
       return AF_LOCAL;
     }
 
-    friend bool operator==(const tcp& p1, const tcp& p2) {
+    friend bool operator==(const stream_protocol& p1, const stream_protocol& p2) {
       return true;
     }
 
-    friend bool operator!=(const tcp& p1, const tcp& p2) {
-      return false
+    friend bool operator!=(const stream_protocol& p1, const stream_protocol& p2) {
+      return false;
     }
   };
 
