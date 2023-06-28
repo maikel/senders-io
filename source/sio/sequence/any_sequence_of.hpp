@@ -115,7 +115,6 @@ namespace sio {
         }
 
         template <class Sender>
-          requires constructible_from<item_sender, Sender>
         void_sender set_next(exec::set_next_t, Sender&& sndr) {
           return (*static_cast<const rcvr_next_vfun<next_sigs>*>(env_.vtable_)->fn_)(
             env_.rcvr_, static_cast<Sender&&>(sndr));
@@ -305,14 +304,14 @@ namespace sio {
         : sender_((Sender&&) sender) {
       }
 
-      template <exec::sequence_receiver_of<Completions> Rcvr>
-      auto subscribe(exec::subscribe_t, Rcvr __rcvr) && {
-        return static_cast<sender_base&&>(sender_).subscribe(
-          exec::subscribe, static_cast<Rcvr&&>(__rcvr));
+      template <class Rcvr>
+        requires callable<exec::subscribe_t, sender_base&&, Rcvr>
+      exec::subscribe_result_t<sender_base&&, Rcvr> subscribe(exec::subscribe_t, Rcvr __rcvr) && {
+        return exec::subscribe(static_cast<sender_base&&>(sender_), static_cast<Rcvr&&>(__rcvr));
       }
 
-      env_t get_env(stdexec::get_env_t) const noexcept {
-        return sender_.get_env(stdexec::get_env);
+      stdexec::env_of_t<sender_base> get_env(stdexec::get_env_t) const noexcept {
+        return stdexec::get_env(sender_);
       }
     };
   };
