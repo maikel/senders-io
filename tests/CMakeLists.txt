@@ -15,6 +15,7 @@ add_executable(test_sio
   test_file_handle.cpp
   test_async_accept.cpp
   test_memory_pool.cpp
+  test_tap.cpp
   net/test_address.cpp
   net/test_endpoint.cpp
   net/test_resolve.cpp
