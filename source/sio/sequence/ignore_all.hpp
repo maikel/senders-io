@@ -37,21 +37,23 @@ namespace sio {
     template <class ResultVariant, bool IsLockStep>
     struct result_type {
       ResultVariant result_{};
-      std::atomic<bool> emplaced_{false};
+      std::atomic<int> emplaced_{0};
 
       template <class... Args>
       void emplace(Args&&... args) noexcept {
-        if (!emplaced_.exchange(true, std::memory_order_relaxed)) {
+        int expected = 0;
+        if (emplaced_.compare_exchange_strong(expected, 1, std::memory_order_relaxed)) {
           result_.template emplace<decayed_tuple<Args...>>(static_cast<Args&&>(args)...);
-          emplaced_.store(true, std::memory_order_release);
+          emplaced_.store(2, std::memory_order_release);
         }
       }
 
       template <class Receiver>
       void visit_result(Receiver&& rcvr) noexcept {
-        bool is_emplaced = emplaced_.load(std::memory_order_acquire);
-        if (!is_emplaced) {
+        int is_emplaced = emplaced_.load(std::memory_order_acquire);
+        if (is_emplaced == 0) {
           stdexec::set_value(static_cast<Receiver&&>(rcvr));
+          return;
         }
         std::visit(
           [&]<class Tuple>(Tuple&& tuple) noexcept {
