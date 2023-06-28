@@ -17,6 +17,7 @@
 
 #include <netinet/in.h>
 #include <bit>
+#include <sys/socket.h>
 
 #include "address.hpp"
 
@@ -71,20 +72,16 @@ namespace sio::ip {
       }
     }
 
-    ::sockaddr* data() noexcept {
+    sockaddr* data() noexcept {
       return &data_.base;
     }
 
-    const ::sockaddr* data() const noexcept {
+    const sockaddr* data() const noexcept {
       return &data_.base;
     }
 
-    ::socklen_t size() const noexcept {
-      if (is_v4()) {
-        return sizeof(data_.v4);
-      } else {
-        return sizeof(data_.v6);
-      }
+    size_t size() const noexcept {
+      return is_v4() ? sizeof(::sockaddr_in) : sizeof(::sockaddr_in6);
     }
 
     friend bool operator==(const endpoint& e1, const endpoint& e2) noexcept {

@@ -16,7 +16,6 @@
 #include "./file_handle.hpp"
 
 namespace sio::io_uring {
-
   void close_submission::submit(::io_uring_sqe& sqe) const noexcept {
     ::io_uring_sqe sqe_{};
     sqe_.opcode = IORING_OP_CLOSE;

@@ -22,11 +22,14 @@
 #include "../sequence/reduce.hpp"
 
 #include "exec/linux/io_uring_context.hpp"
+#include "sio/concepts.hpp"
+#include "sio/net/ip/endpoint.hpp"
 
 #include <exception>
 #include <filesystem>
 #include <span>
 
+#include <sys/socket.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/uio.h>
@@ -115,8 +118,10 @@ namespace sio::io_uring {
   };
 
   struct native_fd_handle {
-    exec::io_uring_context* context_;
-    int fd_;
+    exec::io_uring_context* context_{};
+    int fd_{-1};
+
+    native_fd_handle() noexcept = default;
 
     explicit native_fd_handle(exec::io_uring_context* context, int fd) noexcept
       : context_{context}
@@ -250,7 +255,8 @@ namespace sio::io_uring {
 
     void complete(const ::io_uring_cqe& cqe) noexcept {
       if (cqe.res >= 0) {
-        stdexec::set_value(static_cast<read_operation_base&&>(*this).receiver(), cqe.res);
+        stdexec::set_value(
+          static_cast<read_operation_base&&>(*this).receiver(), static_cast<std::size_t>(cqe.res));
       } else {
         STDEXEC_ASSERT(cqe.res < 0);
         stdexec::set_error(
@@ -344,7 +350,8 @@ namespace sio::io_uring {
 
     void complete(const ::io_uring_cqe& cqe) noexcept {
       if (cqe.res >= 0) {
-        stdexec::set_value(static_cast<write_operation_base&&>(*this).receiver(), cqe.res);
+        stdexec::set_value(
+          static_cast<write_operation_base&&>(*this).receiver(), static_cast<std::size_t>(cqe.res));
       } else {
         STDEXEC_ASSERT(cqe.res < 0);
         stdexec::set_error(
@@ -410,7 +417,9 @@ namespace sio::io_uring {
     using const_buffers_type = std::span<const_buffer_type>;
     using extent_type = ::off_t;
 
-    explicit byte_stream(native_fd_handle fd) noexcept
+    using native_fd_handle::native_fd_handle;
+
+    explicit byte_stream(const native_fd_handle& fd) noexcept
       : native_fd_handle{fd} {
     }
 
@@ -461,7 +470,6 @@ namespace sio::io_uring {
     using extent_type = ::off_t;
 
     using byte_stream::byte_stream;
-
     using byte_stream::read_some;
     using byte_stream::read;
     using byte_stream::write_some;

@@ -54,20 +54,13 @@ namespace sio {
 
     struct on_receiver_stop {
       allocate_operation* op_{};
-
-      void operator()() const noexcept {
-        {
-          std::scoped_lock lock{op_->pool_->mutex_};
-          op_->pool_->pending_allocation_[op_->index_].erase(op_);
-        }
-        op_->stop_callback_.reset();
-        stdexec::set_stopped(static_cast<Receiver&&>(op_->receiver_));
-      }
+      void operator()() const noexcept;
     };
 
     allocate_operation(Receiver receiver, memory_pool* pool, std::size_t index) noexcept(nothrow_move_constructible<Receiver>)
       : allocate_operation_base{[](allocate_operation_base* self) noexcept {
         auto* op = static_cast<allocate_operation*>(self);
+        op->stop_callback_.reset();
         if (op->result_.index() == 0) {
           if (std::get<0>(op->result_)) {
             stdexec::set_value(static_cast<Receiver&&>(op->receiver_), std::get<0>(op->result_));
@@ -129,6 +122,22 @@ namespace sio {
     deallocate_operation<Receiver> connect(stdexec::connect_t, Receiver receiver) const
       noexcept(nothrow_move_constructible<Receiver>) {
       return {static_cast<Receiver&&>(receiver), pool_, pointer_};
+    }
+
+    friend void tag_invoke(stdexec::sync_wait_t, deallocate_sender self) noexcept {
+      struct rcvr {
+        using is_receiver = void;
+
+        stdexec::empty_env get_env(stdexec::get_env_t) const noexcept {
+          return {};
+        }
+
+        void set_value(stdexec::set_value_t) const noexcept {
+        }
+      };
+
+      auto op = stdexec::connect(self, rcvr{});
+      stdexec::start(op);
     }
   };
 
@@ -204,9 +213,19 @@ namespace sio {
       });
     }
 
-    auto deallocate(async::deallocate_t, void* ptr) const noexcept {
+    auto deallocate(async::deallocate_t, T* ptr) const noexcept {
       return pool_->deallocate(ptr);
     }
   };
+
+  template <class Receiver>
+  void allocate_operation<Receiver>::on_receiver_stop::operator()() const noexcept {
+    {
+      std::scoped_lock lock{op_->pool_->mutex_};
+      op_->pool_->pending_allocation_[op_->index_].erase(op_);
+    }
+    op_->stop_callback_.reset();
+    stdexec::set_stopped(static_cast<Receiver&&>(op_->receiver_));
+  }
 
 } // namespace sio
