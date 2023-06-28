@@ -22,8 +22,8 @@
 
 #include <catch2/catch.hpp>
 
-#include "sio/net/ip/address.hpp"
-#include "sio/net/ip/endpoint.hpp"
+#include "sio/ip/address.hpp"
+#include "sio/ip/endpoint.hpp"
 
 using namespace sio::ip;
 

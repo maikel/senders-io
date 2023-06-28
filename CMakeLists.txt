@@ -31,11 +31,11 @@ target_sources(sio PUBLIC
   TYPE HEADERS
   BASE_DIRS source
   FILES
-    source/sio/net/ip/address.hpp
-    source/sio/net/ip/endpoint.hpp
-    source/sio/net/ip/resolve.hpp
-    source/sio/net/ip/tcp.hpp
-    source/sio/net/ip/udp.hpp
+    source/sio/ip/address.hpp
+    source/sio/ip/endpoint.hpp
+    source/sio/ip/resolve.hpp
+    source/sio/ip/tcp.hpp
+    source/sio/ip/udp.hpp
     source/sio/sequence/any_sequence_of.hpp
     source/sio/sequence/empty_sequence.hpp
     source/sio/sequence/first.hpp

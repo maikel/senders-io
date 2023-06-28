@@ -23,7 +23,7 @@
 
 #include "exec/linux/io_uring_context.hpp"
 #include "sio/concepts.hpp"
-#include "sio/net/ip/endpoint.hpp"
+#include "sio/ip/endpoint.hpp"
 
 #include <exception>
 #include <filesystem>

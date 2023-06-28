@@ -18,7 +18,6 @@
 #include "./async_allocator.hpp"
 #include "./async_resource.hpp"
 #include "./sequence/sequence_concepts.hpp"
-#include "./net/ip/address.hpp"
 #include "./concepts.hpp"
 
 namespace sio {

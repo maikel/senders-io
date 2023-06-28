@@ -17,40 +17,44 @@
 
 #include <netinet/in.h>
 
+#include "./endpoint.hpp"
+
 namespace sio::ip {
 
-  class udp {
+  class tcp {
    public:
-    static udp v4() {
-      return udp(AF_INET);
+    using endpoint = ip::endpoint;
+
+    static tcp v4() {
+      return tcp(AF_INET);
     }
 
-    static udp v6() {
-      return udp(AF_INET6);
+    static tcp v6() {
+      return tcp(AF_INET6);
     }
 
     int type() const {
-      return SOCK_DGRAM;
+      return SOCK_STREAM;
     }
 
     int protocol() const {
-      return IPPROTO_UDP;
+      return IPPROTO_TCP;
     }
 
     int family() const {
       return family_;
     }
 
-    friend bool operator==(const udp& p1, const udp& p2) {
+    friend bool operator==(const tcp& p1, const tcp& p2) {
       return p1.family_ == p2.family_;
     }
 
-    friend bool operator!=(const udp& p1, const udp& p2) {
+    friend bool operator!=(const tcp& p1, const tcp& p2) {
       return p1.family_ != p2.family_;
     }
 
    private:
-    explicit udp(int protocol_family)
+    explicit tcp(int protocol_family)
       : family_(protocol_family) {
     }
 

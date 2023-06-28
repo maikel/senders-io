@@ -13,8 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include "sio/net/ip/resolve.hpp"
-#include "sio/net/ip/tcp.hpp"
+#include "sio/ip/resolve.hpp"
+#include "sio/ip/tcp.hpp"
 #include "sio/sequence/first.hpp"
 
 #include <catch2/catch.hpp>
