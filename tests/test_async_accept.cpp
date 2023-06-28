@@ -29,7 +29,7 @@ TEST_CASE("async_accept concept", "[async_accept]") {
   exec::io_uring_context ctx;
 
   ip::endpoint ep{ip::address_v4::any(), 80};
-  io_uring::acceptor_handle acceptor{ctx, -1, ep};
+  io_uring::acceptor_handle acceptor{ctx, -1, ip::tcp::v4(), ep};
 
   auto sequence = sio::async::accept(acceptor);
   STATIC_REQUIRE(exec::sequence_sender<decltype(sequence)>);
@@ -50,11 +50,11 @@ TEST_CASE("async_accept should work", "[async_accept]") {
   exec::io_uring_context ctx;
 
   stdexec::sender auto accept = sio::async::use_resources(
-    [](io_uring::acceptor_handle acceptor) { return ignore_all(sio::async::accept(acceptor)); },
+    [](auto acceptor) { return ignore_all(sio::async::accept(acceptor)); },
     io_uring::make_deferred_acceptor(&ctx, ip::tcp::v4(), ip::endpoint{ip::address_v4::any(), 1080}));
 
   stdexec::sender auto connect = async::use_resources(
-    [](sio::io_uring::socket_handle client) {
+    [](auto client) {
       return sio::async::connect(client, ip::endpoint{ip::address_v4::loopback(), 1080});
     },
     sio::io_uring::make_deferred_socket(&ctx, ip::tcp::v4()));
