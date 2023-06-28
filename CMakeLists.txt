@@ -41,6 +41,7 @@ target_sources(sio PUBLIC
     source/sio/sequence/ignore_all.hpp
     source/sio/sequence/iterate.hpp
     source/sio/sequence/last.hpp
+    source/sio/sequence/let_value_each.hpp
     source/sio/sequence/merge_each.hpp
     source/sio/sequence/reduce.hpp
     source/sio/sequence/scan.hpp
@@ -51,10 +52,12 @@ target_sources(sio PUBLIC
     source/sio/io_uring/buffered_sequence.hpp
     source/sio/io_uring/file_handle.hpp
     source/sio/io_uring/socket_handle.hpp
+    source/sio/assert.hpp
     source/sio/async_allocator.hpp
     source/sio/async_resource.hpp
     source/sio/concepts.hpp
     source/sio/deferred.hpp
+    source/sio/intrusive_list.hpp
     source/sio/intrusive_queue.hpp
     source/sio/io_concepts.hpp
     source/sio/memory_pool.hpp
@@ -90,5 +93,10 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
     FILE sio-targets.cmake
     NAMESPACE sio::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sio)
+
+  install(
+    FILES cmake/sio-config.cmake
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/sio")
+
   include(CPack)
 endif()
