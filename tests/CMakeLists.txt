@@ -30,6 +30,7 @@ add_executable(test_sio
   sequence/test_scan.cpp
   sequence/test_transform_each.cpp
   sequence/test_zip.cpp
+  epoll/test_epoll_context.cpp
 )
 target_include_directories(test_sio PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(test_sio PRIVATE sio::sio Catch2::Catch2)
