@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Runner-2019
+ * Copyright (c) 2023 Xiaoming Zhang
  *
  * Licensed under the Apache License Version 2.0 with LLVM Exceptions
  * (the "License"); you may not use this file except in compliance with
@@ -16,7 +16,9 @@
 
 #pragma once
 
+#include <cstdint>
 #include <sys/epoll.h>
+#include <sys/eventfd.h>
 #include <sys/timerfd.h>
 
 #include <atomic>
@@ -36,26 +38,59 @@
 
 namespace sio {
   namespace epoll {
-    constexpr int epoll_create_size_hint = 1024;
-
     inline void throw_error_code_if(bool cond, int ec) {
       if (cond) {
         throw std::system_error(ec, std::system_category());
       }
     }
 
-    inline int epoll_create(int hint) {
-      int fd = ::epoll_create(hint);
+    inline int create_epoll() {
+      static constexpr int epoll_create_size_hint = 1024;
+      int fd = ::epoll_create(epoll_create_size_hint);
+      throw_error_code_if(fd < 0, errno);
+      return fd;
+    }
+
+    inline int create_eventfd() {
+      int fd = ::eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+      throw_error_code_if(fd < 0, errno);
+      return fd;
+    }
+
+    inline int create_timer() {
+      int fd = ::timerfd_create(CLOCK_MONOTONIC, 0);
       throw_error_code_if(fd < 0, errno);
       return fd;
     }
 
     struct context_base : stdexec::__immovable {
       context_base()
-        : epoll_fd_(epoll_create(epoll_create_size_hint)) {
+        : epoll_fd_(create_epoll())
+        , event_fd_(create_eventfd())
+        , timer_fd_(create_timer()) {
+        epoll_event event_ev = {
+          .events = EPOLLIN | EPOLLERR | EPOLLET, .data = {.ptr = &event_fd_}};
+        int ret = ::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, event_fd_, &event_ev);
+        throw_error_code_if(ret < 0, errno);
+
+        epoll_event timer_ev = {.events = EPOLLIN | EPOLLERR, .data = {.ptr = &timer_fd_}};
+        ret = ::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, timer_fd_, &timer_ev);
+        throw_error_code_if(ret < 0, errno);
+      }
+
+      ~context_base() {
+        epoll_event event = {};
+        int ret = ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, event_fd_, &event);
+        throw_error_code_if(ret < 0, errno);
+
+        event = {};
+        ret = ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, timer_fd_, &event);
+        throw_error_code_if(ret < 0, errno);
       }
 
       exec::safe_file_descriptor epoll_fd_;
+      exec::safe_file_descriptor event_fd_;
+      exec::safe_file_descriptor timer_fd_;
     };
 
     struct task_base {
@@ -76,18 +111,19 @@ namespace sio {
       void run_until_stopped() {
         // Only one thread of execution is allowed to drive the io context.
         bool expected_running = false;
+
         if (
           !is_running_.compare_exchange_strong(expected_running, true, std::memory_order_relaxed)) {
-          throw std::runtime_error("epoll_context::run() called on a running context");
+          throw std::runtime_error("sio::epoll::epoll_context::run() called on a running context");
         } else {
           // Check whether we restart the context after a context-wide stop.
           // We have to reset the stop source in this case.
-          int in_flight = n_submissions_in_flight_.load(std::memory_order_relaxed);
+          int in_flight = submissions_in_flight_.load(std::memory_order_relaxed);
           if (in_flight == no_new_submissions) {
             stop_source_.emplace();
             // Make emplacement of stop source visible to other threads
             // and open the door for new submissions.
-            n_submissions_in_flight_.store(0, std::memory_order_release);
+            submissions_in_flight_.store(0, std::memory_order_release);
           }
         }
 
@@ -95,70 +131,67 @@ namespace sio {
           is_running_.store(false, std::memory_order_relaxed);
         }};
 
-        size_t executed_cnt = 0;
-        while (true) { // TODO: still in progress
-          executed_cnt = execute_tasks();
-          if (stop_source_->stop_requested()) {
+        task_queue_.append(requests_.pop_all());
+        while (submitted_ > 0 || !task_queue_.empty()) {
+          execute_tasks();
+          if (submitted_ == 0 || (break_loop_.load(std::memory_order_acquire))) {
+            break_loop_.store(false, std::memory_order_relaxed);
             break;
           }
-          // if (timers_are_dirty_) {
-          //   update_timers();
-          // }
-          if (!processed_outstanding_submitted_) {
-            // This flag will be true if we have collected some items from remote
-            // queue to local queue. So we have cleared remote queue. Just wait the
-            // next time's interrupt.
-            processed_outstanding_submitted_ = try_schedule_remote_to_local();
+          // TODO(xiaoming): timers
+          submitted_ -= acquire_tasks_from_epoll();
+          SIO_ASSERT(0 <= submitted_);
+          task_queue_.append(requests_.pop_all());
+        }
+
+        SIO_ASSERT(submitted_ <= 1);
+        if (stop_source_->stop_requested() && task_queue_.empty()) {
+          SIO_ASSERT(submitted_ == 0);
+          // try to shutdown the request queue
+          int in_flight_expected = 0;
+          while (submissions_in_flight_.compare_exchange_weak(
+            in_flight_expected, no_new_submissions, std::memory_order_relaxed)) {
+            if (in_flight_expected == no_new_submissions) {
+              break;
+            }
+            in_flight_expected = 0;
           }
-          acquire_completion_queue_items();
+          SIO_ASSERT(submissions_in_flight_.load(std::memory_order_relaxed) == no_new_submissions);
+          // There could have been requests in flight.
+          // Complete all of them and then stop it, finally.
+          task_queue_.append(requests_.pop_all());
+          // TODO(xiaoming): complete tasks with stop
         }
       }
 
-      epoll_context()
-        : context_base()
-        , processed_outstanding_submitted_(false)
-        , timer_fd_(create_timer())
-        // , interrupter_()
-        // , timers_()
-        // , current_earliest_due_time_()
-        // , timers_are_dirty_(false)
-        , task_queue_()
-        , requests_()
-        , stop_source_(std::in_place)
-        , is_running_(false) {
-        add_timer_to_epoll();
-        add_interrupter_to_epoll();
-      }
-
-      // Destructor.
-      ~epoll_context() {
-        remove_timer_from_epoll();
-        remove_interrupter_from_epoll();
-      }
-
-      // Request to stop the context. Note that the context may block on the
-      // epoll_wait call, so we must use interrupt to wake up the context.
+      // Request to stop the context.
+      // Note that the context may block on the epoll_wait call,
+      // so we need to wake up the context.
       void request_stop() {
         stop_source_->request_stop();
-        // interrupter_.interrupt();
+        wakeup();
       }
 
-      // Whether this context have been request to stop.
       bool stop_requested() const noexcept {
         return stop_source_->stop_requested();
       }
 
-      // Get this context associated stop token.
       stdexec::in_place_stop_token get_stop_token() const noexcept {
         return stop_source_->get_token();
       }
 
-      // Check whether this context is running.
       bool is_running() const noexcept {
         return is_running_.load(std::memory_order_relaxed);
       }
 
-      // TODO
+      /// @brief  Breaks out of the run loop of the io context without stopping the context.
+      void finish() {
+        break_loop_.store(true, std::memory_order_release);
+        wakeup();
+      }
+
+
+      // TODO(xiaoming)
       struct scheduler;
       constexpr scheduler get_scheduler() noexcept;
 
@@ -183,6 +216,33 @@ namespace sio {
       // Schedule the operation to the remote queue.
       void schedule_remote(task_base* op) noexcept;
 
+      /// \brief Submits the given task to the epoll_context.
+      /// \returns true if the task was submitted, false if this io context and this task is have been stopped.
+      bool submit(task_base* op) noexcept {
+        // As long as the number of in-flight submissions is not no_new_submissions, we can
+        // increment the counter and push the operation onto the queue.
+        // If the number of in-flight submissions is no_new_submissions, we have already
+        // finished the stop operation of the io context and we can immediately stop the operation inline.
+        // Remark: As long as the stopping is in progress we can still submit new operations.
+        // But no operation will be submitted to io uring unless it is a cancellation operation.
+        int n = 0;
+        while (n != no_new_submissions
+               && !submissions_in_flight_.compare_exchange_weak(
+                 n, n + 1, std::memory_order_acquire, std::memory_order_relaxed)) {
+        }
+
+        if (n == no_new_submissions) {
+          // TODO(xiaoming): complete tasks with stop
+          return false;
+        } else {
+          requests_.push_front(op);
+          [[maybe_unused]] int prev = submissions_in_flight_.fetch_sub(
+            1, std::memory_order_relaxed);
+          SIO_ASSERT(prev > 0);
+          return true;
+        }
+      }
+
       // Execute all tasks in the queue.
       // Tasks that were enqueued during the execution of already enqueued task won't be executed.
       // This bounds the amount of work to a finite amount.
@@ -194,7 +254,7 @@ namespace sio {
         auto tasks = static_cast<task_queue&&>(task_queue_);
         while (!tasks.empty()) {
           auto* task = tasks.pop_front();
-          assert(task->enqueued_);
+          SIO_ASSERT(task->enqueued_);
           task->enqueued_ = false;
           std::exchange(task->next_, nullptr);
           task->execute_(task);
@@ -203,62 +263,46 @@ namespace sio {
         return count;
       }
 
-      // Check if any completion queue items are available and if so add them to the
-      // local queue.
-      void acquire_completion_queue_items();
+      int acquire_tasks_from_epoll() {
+        static constexpr int epoll_event_max_count = 256;
+        epoll_event events[epoll_event_max_count];
+        int timeout = task_queue_.empty() ? -1 : 0;
+        int result = ::epoll_wait(epoll_fd_, events, epoll_event_max_count, timeout);
+        throw_error_code_if(result < 0, errno);
 
-      // Collect the contents of the remote queue and pass them to local queue.
-      // The return value represents whether the remote queue is empty before we
-      // make a collection. Returns true means remote queue is emtpy before we
-      // collect.
-      bool try_schedule_remote_to_local() noexcept;
-
-      // Signal the remote queue eventfd.
-      // This should only be called after trying to enqueue() work to the remote
-      // queue and being told that the I/O thread is inactive.
-      void interrupt() {
-        // interrupter_.interrupt();
+        task_queue que;
+        for (int i = 0; i < result; ++i) {
+          if (events[i].data.ptr == &event_fd_) {
+            return 0;
+          } else if (events[i].data.ptr == &timer_fd_) {
+            return 0;
+          } else {
+            auto& task = *reinterpret_cast<task_base*>(events[i].data.ptr);
+            SIO_ASSERT(!task.enqueued_.load());
+            task.enqueued_ = true;
+            que.push_back(&task);
+          }
+        }
+        schedule_local(static_cast<task_queue&&>(que));
+        return result;
       }
 
-      // Create epoll file descriptor. Throws an error when creation fails.
-      int create_epoll();
+      void wakeup() {
+        uint64_t wakeup = 1;
+        throw_error_code_if(::write(event_fd_, &wakeup, sizeof(uint64_t)) == -1, errno);
+      }
 
-      // Create timer file descriptor. Throws an error when creation fails.
-      int create_timer();
-
-      // Add the timer's file descriptor to epoll. Throws an error when
-      // registrations fails.
-      void add_timer_to_epoll();
-
-      // Remove the timer's file descriptor from epoll. Throws an error when remove
-      // fails.
-      void remove_timer_from_epoll();
-
-      // Add the interrupter's file descriptor to epoll.  Throws an error when
-      // registrations fails.
-      void add_interrupter_to_epoll();
-
-      // Remove the interrupter's file descriptor from epoll. Throws an error when
-      // remove fails.
-      void remove_interrupter_from_epoll();
-
-      // This constant is used for __n_submissions_in_flight to indicate that no new submissions
-      // to this context will be completed by this context.
+      // This constant is used for submissions_in_flight to indicate that
+      // no new submissions to this context will be completed by this context.
       static constexpr int no_new_submissions = -1;
 
-      std::atomic<bool> is_running_;
-      std::atomic<int> n_submissions_in_flight_{0};
-
-      task_queue task_queue_;
-      atomic_task_queue requests_;
-      std::optional<stdexec::in_place_stop_source> stop_source_;
-      bool processed_outstanding_submitted_;
-      exec::safe_file_descriptor epoll_fd_;
-      exec::safe_file_descriptor timer_fd_;
-      // timer_heap timers_;
-      // std::optional<time_point> current_earliest_due_time_;
-      // bool timers_are_dirty_;
-      // eventfd_interrupter interrupter_;
+      std::atomic<bool> is_running_{false};
+      std::atomic<bool> break_loop_{false};
+      std::atomic<int> submissions_in_flight_{0};
+      uint64_t submitted_{0};
+      task_queue task_queue_{};
+      atomic_task_queue requests_{};
+      std::optional<stdexec::in_place_stop_source> stop_source_{std::in_place};
     };
 
     // The scheduler with returned by `stdexec::get_schedule` customization point
@@ -416,63 +460,8 @@ namespace sio {
       return scheduler{*this};
     }
 
-    inline int epoll_context::create_timer() {
-      int fd = ::timerfd_create(CLOCK_MONOTONIC, 0);
-      if (fd < 0) {
-        throw std::system_error{static_cast<int>(errno), std::system_category(), "timer_fd create"};
-      }
-      return fd;
-    }
-
-    inline void epoll_context::add_timer_to_epoll() {
-    }
-
-    inline void epoll_context::remove_timer_from_epoll() {
-      epoll_event event = {};
-      if (::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, timer_fd_, &event) < 0) {
-        throw std::system_error{
-          static_cast<int>(errno), std::system_category(), "epoll_ctl_del timer_fd"};
-      }
-    }
-
-    inline void epoll_context::add_interrupter_to_epoll() {
-    }
-
-    inline void epoll_context::remove_interrupter_from_epoll() {
-    }
-
     // !!!Stores the address of the context owned by the current thread
     static thread_local epoll_context* current_thread_context;
-
-    static constexpr uint32_t epoll_event_max_count = 256;
-
-    inline void epoll_context::acquire_completion_queue_items() {
-      epoll_event events[epoll_event_max_count];
-      int wait_timeout = task_queue_.empty() ? -1 : 0;
-      int result = ::epoll_wait(epoll_fd_, events, epoll_event_max_count, wait_timeout);
-      if (result < 0) {
-        throw std::system_error{
-          static_cast<int>(errno), std::system_category(), "epoll_wait_return_error"};
-      }
-
-      // TODO(xiaoming) useless
-      constexpr void* interrupter = nullptr;
-      constexpr void* timer_data = nullptr;
-
-      // temporary queue of newly completed items.
-      task_queue tmp_task_queue;
-      for (int i = 0; i < result; ++i) {
-        if (events[i].data.ptr == interrupter) {
-          // evenfd wakeup
-        } else if (events[i].data.ptr == timer_data) {
-          // timers op
-        } else {
-          // tasks
-          // collect task
-        }
-      }
-      schedule_local(std::move(tmp_task_queue));
-    }
 
     inline bool epoll_context::is_running_on_io_thread() const noexcept {
       return this == current_thread_context;
@@ -501,9 +490,6 @@ namespace sio {
     }
 
     inline void epoll_context::schedule_remote(task_base* op) noexcept {
-    }
-
-    inline bool epoll_context::try_schedule_remote_to_local() noexcept {
     }
 
 
