@@ -7,5 +7,5 @@
 using namespace sio;
 
 TEST_CASE("still in progress", "[epoll_context]") {
-  sio::epoll::epoll_context ctx{};
+  sio::epoll_context ctx{};
 }

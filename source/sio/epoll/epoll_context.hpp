@@ -106,7 +106,9 @@ namespace sio {
     using task_queue = stdexec::__intrusive_queue<&task_base::next_>;
     using atomic_task_queue = exec::__atomic_intrusive_queue<&task_base::next_>;
 
-    class epoll_context : context_base {
+    class scheduler;
+
+    class context : context_base {
      public:
       void run_until_stopped() {
         // Only one thread of execution is allowed to drive the io context.
@@ -114,7 +116,7 @@ namespace sio {
 
         if (
           !is_running_.compare_exchange_strong(expected_running, true, std::memory_order_relaxed)) {
-          throw std::runtime_error("sio::epoll::epoll_context::run() called on a running context");
+          throw std::runtime_error("sio::epoll::context::run() called on a running context");
         } else {
           // Check whether we restart the context after a context-wide stop.
           // We have to reset the stop source in this case.
@@ -190,35 +192,11 @@ namespace sio {
         wakeup();
       }
 
+      scheduler get_scheduler() noexcept;
 
-      // TODO(xiaoming)
-      struct scheduler;
-      constexpr scheduler get_scheduler() noexcept;
-
-     private:
-      // The thread that calls `context.run()` is called io thread, and other
-      // threads are remote threads. This function checks which thread is using the
-      // context.
-      bool is_running_on_io_thread() const noexcept;
-
-      // Check whether the thread submitting an operation to the context is the io
-      // thread If the operation is submitted by the io thread, the operation is
-      // submitted to the local queue; otherwise, the operation is submitted to
-      // remote queue.
-      void schedule_impl(task_base* op) noexcept;
-
-      // Schedule the operation to the local queue.
-      void schedule_local(task_base* op) noexcept;
-
-      // Move all contents from remote queue to local queue.
-      void schedule_local(task_queue ops) noexcept;
-
-      // Schedule the operation to the remote queue.
-      void schedule_remote(task_base* op) noexcept;
-
-      /// \brief Submits the given task to the epoll_context.
-      /// \returns true if the task was submitted, false if this io context and this task is have been stopped.
-      bool submit(task_base* op) noexcept {
+      /// \brief schedule the given task to the context.
+      /// \returns true if the task was scheduled, false if this io context and this task is have been stopped.
+      bool schedule(task_base* op) noexcept {
         // As long as the number of in-flight submissions is not no_new_submissions, we can
         // increment the counter and push the operation onto the queue.
         // If the number of in-flight submissions is no_new_submissions, we have already
@@ -243,6 +221,7 @@ namespace sio {
         }
       }
 
+     private:
       // Execute all tasks in the queue.
       // Tasks that were enqueued during the execution of already enqueued task won't be executed.
       // This bounds the amount of work to a finite amount.
@@ -283,7 +262,7 @@ namespace sio {
             que.push_back(&task);
           }
         }
-        schedule_local(static_cast<task_queue&&>(que));
+        task_queue_.append(static_cast<task_queue&&>(que));
         return result;
       }
 
@@ -305,97 +284,67 @@ namespace sio {
       std::optional<stdexec::in_place_stop_source> stop_source_{std::in_place};
     };
 
-    // The scheduler with returned by `stdexec::get_schedule` customization point
-    // object.
-    class epoll_context::scheduler {
-      // The envrionment of scheduler.
-      struct schedule_env;
+    template <typename ReceiverId>
+    class schedule_operation {
+      using receiver_t = stdexec::__t<ReceiverId>;
 
-      // The timing operation which do an immediately schedule.
-      template <typename ReceiverId>
-      class schedule_op;
+     public:
+      struct __t : private task_base {
+        using __id = schedule_operation;
+        using stop_token = stdexec::stop_token_of_t<stdexec::env_of_t<receiver_t>&>;
 
-      // The timing operation which do a schedule at specific time point.
-      template <typename ReceiverId>
-      class schedule_at_op;
+        __t(context& context, receiver_t r)
+          : context_(context)
+          , receiver_(static_cast<receiver_t&&>(r)) {
+          execute_ = &execute_impl;
+        }
 
-      // The sender returned by `stdexec::schedule` customization point object.
-      class schedule_sender;
+        friend void tag_invoke(stdexec::start_t, __t& op) noexcept {
+          op.context_.schedule(&op);
+        }
 
-      // The sender returned by either `stdexec::schedule_at` or
-      // `stdexec::schedule_after` customization point object.
-      class schedule_at_sender;
+       private:
+        static void execute_impl(task_base* p) noexcept {
+          auto& self = *static_cast<__t*>(p);
+          auto token = stdexec::get_stop_token(stdexec::get_env(self.receiver_));
+          if (token.stop_requested() || self.context_.stop_requested()) {
+            stdexec::set_stopped(static_cast<receiver_t&&>(self.receiver_));
+            return;
+          } else {
+            stdexec::set_value(static_cast<receiver_t&&>(self.receiver_));
+          }
+        }
 
-      //                                                                                     [implement]
+        context& context_;
+        STDEXEC_NO_UNIQUE_ADDRESS receiver_t receiver_;
+      };
+    };
+
+    template <typename ReceiverId>
+    class schedule_at_op;
+
+    class scheduler {
+     public:
       struct schedule_env {
-        // TODO: member cpo
+        context* context_;
+
         friend auto tag_invoke(
           stdexec::get_completion_scheduler_t<stdexec::set_value_t>,
           const schedule_env& env) noexcept -> scheduler {
-          return scheduler{env.context};
+          return scheduler{*env.context_};
         }
-
-        explicit constexpr schedule_env(epoll_context& ctx) noexcept
-          : context(ctx) {
-        }
-
-        epoll_context& context;
-      }; // schedule_env
-
-      template <typename ReceiverId>
-      class schedule_op {
-        using receiver_t = stdexec::__t<ReceiverId>;
-
-       public:
-        struct __t : private task_base {
-          using __id = schedule_op;
-          using stop_token = stdexec::stop_token_of_t<stdexec::env_of_t<receiver_t>&>;
-
-          constexpr __t(epoll_context& context, receiver_t r)
-            : context_(context)
-            , receiver_(static_cast<receiver_t&&>(r)) {
-            execute_ = &execute_impl;
-          }
-
-          friend void tag_invoke(stdexec::start_t, __t& op) noexcept {
-            op.start_impl();
-          }
-
-         private:
-          constexpr void start_impl() noexcept {
-            context_.schedule_impl(this);
-          }
-
-          static constexpr void execute_impl(task_base* p) noexcept {
-            auto& self = *static_cast<__t*>(p);
-            if constexpr (!std::unstoppable_token<stop_token>) {
-              auto stop_token = stdexec::get_stop_token(stdexec::get_env(self.receiver_));
-              if (stop_token.stop_requested()) {
-                stdexec::set_stopped(static_cast<receiver_t&&>(self.receiver_));
-                return;
-              }
-            }
-            stdexec::set_value(static_cast<receiver_t&&>(self.receiver_));
-          }
-
-          friend scheduler::schedule_sender;
-
-          epoll_context& context_;
-          STDEXEC_NO_UNIQUE_ADDRESS receiver_t receiver_;
-        };
-      }; // schedule_op.
+      };
 
       class schedule_sender {
         template <typename Receiver>
-        using op_t = stdexec::__t<schedule_op<stdexec::__id<Receiver>>>;
+        using op_t = stdexec::__t<schedule_operation<stdexec::__id<Receiver>>>;
 
        public:
         struct __t {
           using is_sender = void;
           using __id = schedule_sender;
-          using completion_signatures = stdexec::completion_signatures<
-            stdexec::set_value_t(), //
-            stdexec::set_stopped_t()>;
+          using completion_signatures =
+            stdexec::completion_signatures< stdexec::set_value_t(), stdexec::set_stopped_t()>;
 
           template <typename Env>
           friend auto
@@ -411,15 +360,15 @@ namespace sio {
             stdexec::receiver_of<completion_signatures> Receiver>
           friend auto tag_invoke(stdexec::connect_t, Sender&& self, Receiver receiver) noexcept
             -> op_t<Receiver> {
-            return {static_cast<__t&&>(self).env_.context, static_cast<Receiver&&>(receiver)};
+            return {static_cast<__t&&>(self).env_.context_, static_cast<Receiver&&>(receiver)};
           }
 
-          explicit constexpr __t(schedule_env env) noexcept
+          explicit __t(schedule_env env) noexcept
             : env_(env) {
           }
 
          private:
-          friend epoll_context::scheduler;
+          friend scheduler;
 
           schedule_env env_;
         };
@@ -427,19 +376,19 @@ namespace sio {
 
 
      public:
-      explicit constexpr scheduler(epoll_context& context) noexcept
+      explicit scheduler(context& context) noexcept
         : context_(&context) {
       }
 
-      constexpr scheduler(const scheduler&) noexcept = default;
+      scheduler(const scheduler&) noexcept = default;
 
-      constexpr scheduler& operator=(const scheduler&) = default;
+      scheduler& operator=(const scheduler&) = default;
 
-      constexpr ~scheduler() = default;
+      ~scheduler() = default;
 
       friend auto tag_invoke(stdexec::schedule_t, const scheduler& sched) noexcept
         -> stdexec::__t<schedule_sender> {
-        return stdexec::__t<schedule_sender>{schedule_env{*sched.context_}};
+        return stdexec::__t<schedule_sender>{schedule_env{sched.context_}};
       }
 
      private:
@@ -451,49 +400,16 @@ namespace sio {
         return a.context_ != b.context_;
       }
 
-      friend epoll_context;
+      friend context;
 
-      epoll_context* context_;
+      context* context_;
     };
 
-    inline constexpr epoll_context::scheduler epoll_context::get_scheduler() noexcept {
+    inline scheduler context::get_scheduler() noexcept {
       return scheduler{*this};
     }
 
-    // !!!Stores the address of the context owned by the current thread
-    static thread_local epoll_context* current_thread_context;
-
-    inline bool epoll_context::is_running_on_io_thread() const noexcept {
-      return this == current_thread_context;
-    }
-
-    inline void epoll_context::schedule_impl(task_base* op) noexcept {
-      assert(op != nullptr);
-      if (is_running_on_io_thread()) {
-        schedule_local(op);
-      } else {
-        schedule_remote(op);
-      }
-    }
-
-    inline void epoll_context::schedule_local(task_base* op) noexcept {
-      assert(op->execute_ != nullptr);
-      assert(!op->enqueued_);
-      op->enqueued_ = true;
-      task_queue_.push_back(op);
-    }
-
-    inline void epoll_context::schedule_local(task_queue ops) noexcept {
-      // Do not adjust the enqueued flag, which is still true because the ops will
-      // immediately be transferred from the remote queue to the local queue.
-      task_queue_.append(std::move(ops));
-    }
-
-    inline void epoll_context::schedule_remote(task_base* op) noexcept {
-    }
-
-
   }; // namespace epoll
 
-  using epoll_context = epoll::epoll_context;
+  using epoll_context = epoll::context;
 } // namespace sio
