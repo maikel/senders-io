@@ -33,7 +33,7 @@
 #include "stdexec/execution.hpp"
 #include "stdexec/__detail/__execution_fwd.hpp"
 #include "stdexec/stop_token.hpp"
-#include "../intrusive_list.hpp"
+#include "../intrusive_heap.hpp"
 #include "sio/assert.hpp"
 
 namespace sio {
@@ -103,8 +103,41 @@ namespace sio {
       void (*execute_)(task_base*) noexcept = nullptr;
     };
 
+    struct completion_task : task_base { };
+
+    struct stop_task : task_base {
+      stop_task() noexcept {
+        execute_ = [](task_base* op) noexcept {
+          static_cast<stop_task*>(op)->stop_ = true;
+        };
+      }
+
+      bool stop_ = false;
+    };
+
+    using time_point = std::chrono::time_point<std::chrono::steady_clock>;
+    class context;
+
+    struct schedule_at_base_task : task_base {
+      static constexpr uint32_t timer_elapsed = 1;
+      static constexpr uint32_t cancel_pending = 2;
+
+      schedule_at_base_task* timer_next_{nullptr};
+      schedule_at_base_task* timer_prev_{nullptr};
+      context& context_;
+      time_point due_time_{};
+      bool can_be_cancelled_{true};
+      std::atomic<uint32_t> state_{0};
+    };
+
     using task_queue = stdexec::__intrusive_queue<&task_base::next_>;
     using atomic_task_queue = exec::__atomic_intrusive_queue<&task_base::next_>;
+    using timer_heap = intrusive_heap<
+      schedule_at_base_task,
+      &schedule_at_base_task::timer_next_,
+      &schedule_at_base_task::timer_prev_,
+      time_point,
+      &schedule_at_base_task::due_time_>;
 
     class scheduler;
 
