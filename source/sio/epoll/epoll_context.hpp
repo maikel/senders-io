@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <cerrno>
 #include <cstdint>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
@@ -25,6 +26,7 @@
 #include <chrono>
 #include <cstring>
 #include <optional>
+#include <system_error>
 #include <utility>
 
 #include "exec/__detail/__atomic_intrusive_queue.hpp"
@@ -35,6 +37,7 @@
 #include "stdexec/stop_token.hpp"
 #include "../intrusive_heap.hpp"
 #include "sio/assert.hpp"
+#include "exec/__detail/__manual_lifetime.hpp"
 
 namespace sio {
   namespace epoll {
@@ -93,45 +96,53 @@ namespace sio {
       exec::safe_file_descriptor timer_fd_;
     };
 
-    struct task_base {
-      ~task_base() {
-        SIO_ASSERT(!enqueued_);
-      }
+    struct operation_base;
 
+    struct operation_vtable {
+      bool (*ready_)(operation_base*) noexcept = nullptr;   // NOLINT
+      void (*execute_)(operation_base*) noexcept = nullptr; // NOLINT
+      void (*complete_)(operation_base*, const std::error_code&) noexcept = nullptr;
+    };
+
+    struct operation_base : stdexec::__immovable {
+      const operation_vtable* vtable_;
+      operation_base* next_{nullptr};
       std::atomic_bool enqueued_{false};
-      task_base* next_{nullptr};
-      void (*execute_)(task_base*) noexcept = nullptr;
-    };
 
-    struct completion_task : task_base { };
-
-    struct stop_task : task_base {
-      stop_task() noexcept {
-        execute_ = [](task_base* op) noexcept {
-          static_cast<stop_task*>(op)->stop_ = true;
-        };
+      explicit operation_base(const operation_vtable& vtable)
+        : vtable_{&vtable} {
       }
-
-      bool stop_ = false;
     };
+
+    inline void stop_this_operation(operation_base* op) noexcept {
+      op->vtable_->complete_(op, std::make_error_code(std::errc::operation_canceled));
+    }
+
+    inline void complete_this_operation(operation_base* op) noexcept {
+      op->vtable_->complete_(op, std::error_code{});
+    }
+
+    inline void execute_this_operation(operation_base* op) noexcept {
+      op->vtable_->execute_(op);
+    }
 
     using time_point = std::chrono::time_point<std::chrono::steady_clock>;
-    class context;
+    class epoll_context;
 
-    struct schedule_at_base_task : task_base {
+    struct schedule_at_base_task : operation_base {
       static constexpr uint32_t timer_elapsed = 1;
       static constexpr uint32_t cancel_pending = 2;
 
       schedule_at_base_task* timer_next_{nullptr};
       schedule_at_base_task* timer_prev_{nullptr};
-      context& context_;
+      epoll_context& context_;
       time_point due_time_{};
       bool can_be_cancelled_{true};
       std::atomic<uint32_t> state_{0};
     };
 
-    using task_queue = stdexec::__intrusive_queue<&task_base::next_>;
-    using atomic_task_queue = exec::__atomic_intrusive_queue<&task_base::next_>;
+    using operation_queue = stdexec::__intrusive_queue<&operation_base::next_>;
+    using atomic_task_queue = exec::__atomic_intrusive_queue<&operation_base::next_>;
     using timer_heap = intrusive_heap<
       schedule_at_base_task,
       &schedule_at_base_task::timer_next_,
@@ -141,7 +152,7 @@ namespace sio {
 
     class scheduler;
 
-    class context : context_base {
+    class epoll_context : context_base {
      public:
       void run_until_stopped() {
         // Only one thread of execution is allowed to drive the io context.
@@ -166,21 +177,21 @@ namespace sio {
           is_running_.store(false, std::memory_order_relaxed);
         }};
 
-        task_queue_.append(requests_.pop_all());
-        while (submitted_ > 0 || !task_queue_.empty()) {
-          execute_tasks();
+        op_queue_.append(requests_.pop_all());
+        while (submitted_ > 0 || !op_queue_.empty()) {
+          execute_operations();
           if (submitted_ == 0 || (break_loop_.load(std::memory_order_acquire))) {
             break_loop_.store(false, std::memory_order_relaxed);
             break;
           }
           // TODO(xiaoming): timers
-          submitted_ -= acquire_tasks_from_epoll();
+          submitted_ -= acquire_operations_from_epoll();
           SIO_ASSERT(0 <= submitted_);
-          task_queue_.append(requests_.pop_all());
+          op_queue_.append(requests_.pop_all());
         }
 
         SIO_ASSERT(submitted_ <= 1);
-        if (stop_source_->stop_requested() && task_queue_.empty()) {
+        if (stop_source_->stop_requested() && op_queue_.empty()) {
           SIO_ASSERT(submitted_ == 0);
           // try to shutdown the request queue
           int in_flight_expected = 0;
@@ -194,8 +205,8 @@ namespace sio {
           SIO_ASSERT(submissions_in_flight_.load(std::memory_order_relaxed) == no_new_submissions);
           // There could have been requests in flight.
           // Complete all of them and then stop it, finally.
-          task_queue_.append(requests_.pop_all());
-          // TODO(xiaoming): complete tasks with stop
+          op_queue_.append(requests_.pop_all());
+          // TODO(xiaoming): complete op_queue with stop
         }
       }
 
@@ -227,9 +238,9 @@ namespace sio {
 
       scheduler get_scheduler() noexcept;
 
-      /// \brief schedule the given task to the context.
-      /// \returns true if the task was scheduled, false if this io context and this task is have been stopped.
-      bool schedule(task_base* op) noexcept {
+      /// \brief schedule the given op to the context.
+      /// \returns true if the op was scheduled, false if this io context and this op is have been stopped.
+      bool schedule(operation_base* op) noexcept {
         // As long as the number of in-flight submissions is not no_new_submissions, we can
         // increment the counter and push the operation onto the queue.
         // If the number of in-flight submissions is no_new_submissions, we have already
@@ -243,7 +254,7 @@ namespace sio {
         }
 
         if (n == no_new_submissions) {
-          // TODO(xiaoming): complete tasks with stop
+          stop_this_operation(op);
           return false;
         } else {
           requests_.push_front(op);
@@ -254,54 +265,61 @@ namespace sio {
         }
       }
 
+      void wakeup() {
+        uint64_t wakeup = 1;
+        throw_error_code_if(::write(event_fd_, &wakeup, sizeof(uint64_t)) == -1, errno);
+      }
+
+      int epoll_fd() {
+        return epoll_fd_;
+      }
+
      private:
-      // Execute all tasks in the queue.
-      // Tasks that were enqueued during the execution of already enqueued task won't be executed.
+      // Execute all op_queue in the queue.
+      // Tasks that were enqueued during the execution of already enqueued op won't be executed.
       // This bounds the amount of work to a finite amount.
-      size_t execute_tasks() noexcept {
-        if (task_queue_.empty()) {
+      size_t execute_operations() noexcept {
+        if (op_queue_.empty()) {
           return 0;
         }
         size_t count = 0;
-        auto tasks = static_cast<task_queue&&>(task_queue_);
-        while (!tasks.empty()) {
-          auto* task = tasks.pop_front();
-          SIO_ASSERT(task->enqueued_);
-          task->enqueued_ = false;
-          std::exchange(task->next_, nullptr);
-          task->execute_(task);
+        auto op_queue = static_cast<operation_queue&&>(op_queue_);
+        while (!op_queue.empty()) {
+          auto* op = op_queue.pop_front();
+          SIO_ASSERT(op->enqueued_);
+          op->enqueued_ = false;
+          std::exchange(op->next_, nullptr);
+          if (!op->vtable_->ready_(op)) {
+            execute_this_operation(op);
+          }
+          complete_this_operation(op);
           ++count;
         }
         return count;
       }
 
-      int acquire_tasks_from_epoll() {
+      int acquire_operations_from_epoll() {
         static constexpr int epoll_event_max_count = 256;
         epoll_event events[epoll_event_max_count];
-        int timeout = task_queue_.empty() ? -1 : 0;
+        int timeout = op_queue_.empty() ? -1 : 0;
         int result = ::epoll_wait(epoll_fd_, events, epoll_event_max_count, timeout);
         throw_error_code_if(result < 0, errno);
 
-        task_queue que;
+        operation_queue que;
         for (int i = 0; i < result; ++i) {
           if (events[i].data.ptr == &event_fd_) {
             return 0;
           } else if (events[i].data.ptr == &timer_fd_) {
             return 0;
           } else {
-            auto& task = *reinterpret_cast<task_base*>(events[i].data.ptr);
-            SIO_ASSERT(!task.enqueued_.load());
-            task.enqueued_ = true;
-            que.push_back(&task);
+            auto& op = *reinterpret_cast<operation_base*>(events[i].data.ptr);
+            SIO_ASSERT(!op.enqueued_.load());
+            op.enqueued_ = true;
+            que.push_back(&op);
           }
         }
-        task_queue_.append(static_cast<task_queue&&>(que));
+        op_queue_.append(static_cast<operation_queue&&>(que));
         return result;
-      }
-
-      void wakeup() {
-        uint64_t wakeup = 1;
-        throw_error_code_if(::write(event_fd_, &wakeup, sizeof(uint64_t)) == -1, errno);
       }
 
       // This constant is used for submissions_in_flight to indicate that
@@ -312,54 +330,323 @@ namespace sio {
       std::atomic<bool> break_loop_{false};
       std::atomic<int> submissions_in_flight_{0};
       uint64_t submitted_{0};
-      task_queue task_queue_{};
+      operation_queue op_queue_{};
       atomic_task_queue requests_{};
       std::optional<stdexec::in_place_stop_source> stop_source_{std::in_place};
     };
 
-    template <typename ReceiverId>
-    class schedule_operation {
-      using receiver_t = stdexec::__t<ReceiverId>;
+    template <class Operation>
+    concept io_operation = requires(Operation& op, const std::error_code& ec) {
+                             { op.context() } noexcept -> std::convertible_to<epoll_context&>;
+                             { op.ready() } noexcept -> std::convertible_to<bool>;
+                             { op.execute() } noexcept;
+                             { op.complete(ec) } noexcept;
+                           };
 
-     public:
-      struct __t : private task_base {
-        using __id = schedule_operation;
-        using stop_token = stdexec::stop_token_of_t<stdexec::env_of_t<receiver_t>&>;
+    template <class Operation>
+    concept stoppable_operation =
+      io_operation<Operation>
+      && requires(Operation& op) {
+           {
+             static_cast<Operation&&>(op).receiver()
+             } noexcept
+               -> stdexec::receiver_of< stdexec::completion_signatures<stdexec::set_stopped_t()>>;
+         };
 
-        __t(context& context, receiver_t r)
-          : context_(context)
-          , receiver_(static_cast<receiver_t&&>(r)) {
-          execute_ = &execute_impl;
+    template <stoppable_operation Operation>
+    using receiver_of_t = stdexec::__decay_t<decltype(std::declval<Operation&>().receiver())>;
+
+    template <io_operation Base>
+    struct io_operation_facade : operation_base {
+      static bool ready(operation_base* op) noexcept {
+        auto self = static_cast<io_operation_facade*>(op);
+        return self->base_.ready();
+      }
+
+      static void execute(operation_base* op) noexcept {
+        auto self = static_cast<io_operation_facade*>(op);
+        self->base_.execute();
+      }
+
+      static void complete(operation_base* op, const std::error_code& ec) noexcept {
+        auto self = static_cast<io_operation_facade*>(op);
+        self->base_.complete(ec);
+      }
+
+      static constexpr operation_vtable vtable{&ready, &execute, &complete};
+
+      template <class... Args>
+        requires stdexec::constructible_from<Base, std::in_place_t, Args...>
+      explicit io_operation_facade(std::in_place_t, Args&&... args) noexcept(
+        stdexec::__nothrow_constructible_from<Base, Args...>)
+        : operation_base{vtable}
+        , base_(std::in_place, static_cast<Args&&>(args)...) {
+      }
+
+      template <class... Args>
+        requires stdexec::constructible_from<Base, Args...>
+      explicit io_operation_facade(std::in_place_t, Args&&... args) noexcept(
+        stdexec::__nothrow_constructible_from<Base, Args...>)
+        : operation_base{vtable}
+        , base_(static_cast<Args&&>(args)...) {
+      }
+
+      Base& base() noexcept {
+        return base_;
+      }
+
+     private:
+      Base base_;
+
+      STDEXEC_CPO_ACCESS(stdexec::start_t);
+
+      STDEXEC_DEFINE_CUSTOM(void start)(this io_operation_facade& self, stdexec::start_t) noexcept {
+        epoll_context& ctx = self.base_.context();
+        if (ctx.schedule(&self)) {
+          ctx.wakeup();
+        }
+      }
+    };
+
+    template <class ReceiverId>
+    struct schedule_operation {
+      using Receiver = stdexec::__t<ReceiverId>;
+
+      struct impl {
+        epoll_context& ctx_;
+        STDEXEC_NO_UNIQUE_ADDRESS Receiver rcvr_;
+
+        impl(epoll_context& ctx, Receiver&& rcvr)
+          : ctx_{ctx}
+          , rcvr_{static_cast<Receiver&&>(rcvr)} {
         }
 
-        friend void tag_invoke(stdexec::start_t, __t& op) noexcept {
-          op.context_.schedule(&op);
+        epoll_context& context() const noexcept {
+          return ctx_;
         }
 
-       private:
-        static void execute_impl(task_base* p) noexcept {
-          auto& self = *static_cast<__t*>(p);
-          auto token = stdexec::get_stop_token(stdexec::get_env(self.receiver_));
-          if (token.stop_requested() || self.context_.stop_requested()) {
-            stdexec::set_stopped(static_cast<receiver_t&&>(self.receiver_));
-            return;
+        static constexpr std::true_type ready() noexcept {
+          return {};
+        }
+
+        static constexpr void execute() noexcept {
+        }
+
+        void complete(const std::error_code& ec) noexcept {
+          auto token = stdexec::get_stop_token(stdexec::get_env(rcvr_));
+          if (
+            ec == std::errc::operation_canceled || ctx_.stop_requested()
+            || token.stop_requested()) {
+            stdexec::set_stopped(static_cast<Receiver&&>(rcvr_));
           } else {
-            stdexec::set_value(static_cast<receiver_t&&>(self.receiver_));
+            stdexec::set_value(static_cast<Receiver&&>(rcvr_));
           }
         }
+      };
 
-        context& context_;
-        STDEXEC_NO_UNIQUE_ADDRESS receiver_t receiver_;
+      using __t = io_operation_facade<impl>;
+    };
+
+    template <class Base>
+    struct stop_operation : operation_base {
+      Base* base_;
+
+      static constexpr bool ready(operation_base*) noexcept {
+        return false;
+      }
+
+      static void execute(operation_base* op) noexcept {
+        // TODO(xiaoming)
+        // auto self = static_cast<stop_operation*>(op);
+        // self->base_->execute_stop();
+      }
+
+      static void complete(operation_base* op, const std::error_code& ec) noexcept {
+        auto self = static_cast<stop_operation*>(op);
+        if (self->base_->ops_cnt_.fetch_sub(1, std::memory_order_relaxed) == 1) {
+          self->base_->on_context_stop_.reset();
+          self->base_->on_receiver_stop_.reset();
+          stdexec::set_stopped((static_cast<Base&&>(*self->base_)).receiver());
+        }
+      }
+
+      static constexpr operation_vtable vtable{&ready, &execute, &complete};
+
+      explicit stop_operation(Base* base) noexcept
+        : operation_base(vtable)
+        , base_{base} {
+      }
+
+      void start() noexcept {
+        int expected = 1;
+        if (base_->ops_cnt_.compare_exchange_strong(expected, 2, std::memory_order_relaxed)) {
+          if (base_->context().submit(this)) {
+            base_->context().wakeup();
+          }
+        }
       };
     };
 
-    template <typename ReceiverId>
-    class schedule_at_op;
+    template <stoppable_operation Base>
+    struct stoppable_operation_facade {
+      using Receiver = receiver_of_t<Base>;
+
+      struct impl {
+        struct stop_callback {
+          impl* self_;
+
+          void operator()() noexcept {
+            self_->stop_operation_.start();
+          }
+        };
+
+        using on_context_stop_t = std::optional<stdexec::in_place_stop_callback<stop_callback>>;
+        using on_receiver_stop_t = std::optional<typename stdexec::stop_token_of_t<
+          stdexec::env_of_t<Receiver>&>::template callback_type<stop_callback>>;
+
+        on_context_stop_t on_context_stop_{};
+        on_receiver_stop_t on_receiver_stop_{};
+        std::atomic<int> ops_cnt_{0};
+        stop_operation<impl> stop_operation_;
+        Base base_;
+
+        template <class... Args>
+          requires stdexec::constructible_from<Base, Args...>
+        impl(std::in_place_t, operation_base* parent, Args&&... args) noexcept(
+          stdexec::__nothrow_constructible_from<Base, Args...>)
+          : base_(static_cast<Args&&>(args)...)
+          , stop_operation_{this} {
+        }
+
+        epoll_context& context() noexcept {
+          return this->base_.context();
+        }
+
+        Receiver& receiver() & noexcept {
+          return this->base_.receiver();
+        }
+
+        Receiver&& receiver() && noexcept {
+          return (Receiver &&) this->base_.receiver();
+        }
+
+        bool ready() const noexcept {
+          return this->base_.ready();
+        }
+
+        void execute() noexcept {
+          [[maybe_unused]] int prev = ops_cnt_.fetch_add(1, std::memory_order_relaxed);
+          STDEXEC_ASSERT(prev == 0);
+          epoll_context& ctx_ = this->base_.context();
+          Receiver& rcvr = this->base_.receiver();
+          on_context_stop_.emplace(ctx_.get_stop_token(), stop_callback{this});
+          on_receiver_stop_.emplace(
+            stdexec::get_stop_token(stdexec::get_env(rcvr)), stop_callback{this});
+          this->base_.execute();
+        }
+
+        void complete(const std::error_code& ec) noexcept {
+          if (ops_cnt_.fetch_sub(1, std::memory_order_relaxed) == 1) {
+            on_context_stop_.reset();
+            on_receiver_stop_.reset();
+            Receiver& rcvr = this->base_.receiver();
+            epoll_context& ctx_ = this->base_.context();
+            auto token = stdexec::get_stop_token(stdexec::get_env(rcvr));
+            if (
+              ec == std::errc::operation_canceled || ctx_.stop_requested()
+              || token.stop_requested()) {
+              stdexec::set_stopped(static_cast<Receiver&&>(rcvr));
+            } else {
+              this->base_.complete(ec);
+            }
+          }
+        }
+      };
+
+      using __t = io_operation_facade<impl>;
+    };
+
+    template <class Base>
+    using stoppable_task_facade_t = stdexec::__t<stoppable_operation_facade<Base>>;
+
+    enum class socket_op_type {
+      op_read = 1,
+      op_accept = 1,
+      op_write = 2,
+      op_connect = 2
+    };
+
+    template <io_operation Base>
+    struct socket_operation_facade {
+      struct impl : operation_base {
+        Base base_;
+
+        bool add_events() {
+          epoll_event event{.data = {.ptr = this}};
+          if (base_.op_type_ == socket_op_type::op_read) {
+            event.events = EPOLLIN | EPOLLERR | EPOLLHUP | EPOLLPRI | EPOLLET;
+          } else {
+            event.events = EPOLLOUT | EPOLLERR | EPOLLHUP | EPOLLPRI | EPOLLET;
+          }
+          if (::epoll_ctl(base_.context().epoll_fd(), EPOLL_CTL_ADD, base_.fd_, &event) == -1) {
+            base_.ec_ = std::error_code{errno, std::system_category()};
+            return false;
+          }
+          return true;
+        }
+
+        bool remove_events() {
+          epoll_event event = {};
+          if (::epoll_ctl(base_.context().epoll_fd(), EPOLL_CTL_DEL, base_.fd_, &event) == -1) {
+            base_.ec_ = std::error_code{errno, std::system_category()};
+            return false;
+          }
+          return true;
+        }
+
+        static constexpr bool ready(operation_base*) noexcept {
+          return false;
+        }
+
+        static void execute(operation_base* op) noexcept {
+          auto self = static_cast<impl*>(op);
+          self->base_.execute(self);
+          if (
+            self->base_.ec_ == std::errc::resource_unavailable_try_again
+            || self->base_.ec_ == std::errc::operation_would_block) {
+            self->base_.ec_.clear();
+            self->vtable_.execute_ = wakeup;
+            self->add_events();
+          }
+        }
+
+        static void complete(operation_base* op, const std::error_code& ec) noexcept {
+          auto self = static_cast<impl*>(op);
+          return self->base_.complete(ec);
+        }
+
+        static void wakeup(operation_base* op) noexcept {
+          assert(op->enqueued_.load() == false);
+          auto self = static_cast<socket_operation_facade*>(op);
+          self->remove_events();
+          self->base_.execute();
+        }
+
+        static constexpr operation_vtable vtable{&ready, &execute, &complete};
+
+        explicit impl(Base base)
+          : operation_base(vtable)
+          , base_(base) {
+        }
+      };
+
+      using __t = stoppable_operation_facade<impl>;
+    };
 
     class scheduler {
      public:
       struct schedule_env {
-        context* context_;
+        epoll_context* context_;
 
         friend auto tag_invoke(
           stdexec::get_completion_scheduler_t<stdexec::set_value_t>,
@@ -369,7 +656,7 @@ namespace sio {
       };
 
       class schedule_sender {
-        template <typename Receiver>
+        template <class Receiver>
         using op_t = stdexec::__t<schedule_operation<stdexec::__id<Receiver>>>;
 
        public:
@@ -379,9 +666,9 @@ namespace sio {
           using completion_signatures =
             stdexec::completion_signatures< stdexec::set_value_t(), stdexec::set_stopped_t()>;
 
-          template <typename Env>
+          template <class Env>
           friend auto
-            tag_invoke(stdexec::get_completion_signatures_t, const __t& self, Env&&) noexcept
+            tag_invoke(stdexec::get_completion_signatures_t, const __t& self, Env) noexcept
             -> completion_signatures;
 
           friend auto tag_invoke(stdexec::get_env_t, const __t& self) noexcept -> schedule_env {
@@ -409,7 +696,7 @@ namespace sio {
 
 
      public:
-      explicit scheduler(context& context) noexcept
+      explicit scheduler(epoll_context& context) noexcept
         : context_(&context) {
       }
 
@@ -433,16 +720,16 @@ namespace sio {
         return a.context_ != b.context_;
       }
 
-      friend context;
+      friend epoll_context;
 
-      context* context_;
+      epoll_context* context_;
     };
 
-    inline scheduler context::get_scheduler() noexcept {
+    inline scheduler epoll_context::get_scheduler() noexcept {
       return scheduler{*this};
     }
 
   }; // namespace epoll
 
-  using epoll_context = epoll::context;
+  using epoll_context = epoll::epoll_context;
 } // namespace sio
