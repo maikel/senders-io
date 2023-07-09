@@ -21,6 +21,7 @@
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/timerfd.h>
+#include <sys/uio.h>
 
 #include <atomic>
 #include <chrono>
@@ -91,6 +92,10 @@ namespace sio {
         throw_error_code_if(ret < 0, errno);
       }
 
+      int epoll_fd() const noexcept {
+        return epoll_fd_;
+      }
+
       exec::safe_file_descriptor epoll_fd_;
       exec::safe_file_descriptor event_fd_;
       exec::safe_file_descriptor timer_fd_;
@@ -99,15 +104,14 @@ namespace sio {
     struct operation_base;
 
     struct operation_vtable {
-      bool (*ready_)(operation_base*) noexcept = nullptr;   // NOLINT
-      void (*execute_)(operation_base*) noexcept = nullptr; // NOLINT
+      bool (*ready_)(operation_base*) noexcept = nullptr;
+      void (*execute_)(operation_base*) noexcept = nullptr;
       void (*complete_)(operation_base*, const std::error_code&) noexcept = nullptr;
     };
 
     struct operation_base : stdexec::__immovable {
       const operation_vtable* vtable_;
       operation_base* next_{nullptr};
-      std::atomic_bool enqueued_{false};
 
       explicit operation_base(const operation_vtable& vtable)
         : vtable_{&vtable} {
@@ -142,7 +146,7 @@ namespace sio {
     };
 
     using operation_queue = stdexec::__intrusive_queue<&operation_base::next_>;
-    using atomic_task_queue = exec::__atomic_intrusive_queue<&operation_base::next_>;
+    using atomic_operation_queue = exec::__atomic_intrusive_queue<&operation_base::next_>;
     using timer_heap = intrusive_heap<
       schedule_at_base_task,
       &schedule_at_base_task::timer_next_,
@@ -203,11 +207,18 @@ namespace sio {
             in_flight_expected = 0;
           }
           SIO_ASSERT(submissions_in_flight_.load(std::memory_order_relaxed) == no_new_submissions);
-          // There could have been requests in flight.
-          // Complete all of them and then stop it, finally.
+          // There could have been requests in flight. Stop them.
           op_queue_.append(requests_.pop_all());
-          // TODO(xiaoming): complete op_queue with stop
+          operation_base* op = nullptr;
+          while ((op = op_queue_.pop_front())) {
+            stop_this_operation(op);
+          }
         }
+      }
+
+      void run_until_empty() {
+        break_loop_.store(true, std::memory_order_relaxed);
+        run_until_stopped();
       }
 
       // Request to stop the context.
@@ -270,10 +281,6 @@ namespace sio {
         throw_error_code_if(::write(event_fd_, &wakeup, sizeof(uint64_t)) == -1, errno);
       }
 
-      int epoll_fd() {
-        return epoll_fd_;
-      }
-
      private:
       // Execute all op_queue in the queue.
       // Tasks that were enqueued during the execution of already enqueued op won't be executed.
@@ -286,8 +293,6 @@ namespace sio {
         auto op_queue = static_cast<operation_queue&&>(op_queue_);
         while (!op_queue.empty()) {
           auto* op = op_queue.pop_front();
-          SIO_ASSERT(op->enqueued_);
-          op->enqueued_ = false;
           std::exchange(op->next_, nullptr);
           if (!op->vtable_->ready_(op)) {
             execute_this_operation(op);
@@ -305,7 +310,7 @@ namespace sio {
         int result = ::epoll_wait(epoll_fd_, events, epoll_event_max_count, timeout);
         throw_error_code_if(result < 0, errno);
 
-        operation_queue que;
+        operation_queue ops;
         for (int i = 0; i < result; ++i) {
           if (events[i].data.ptr == &event_fd_) {
             return 0;
@@ -313,12 +318,10 @@ namespace sio {
             return 0;
           } else {
             auto& op = *reinterpret_cast<operation_base*>(events[i].data.ptr);
-            SIO_ASSERT(!op.enqueued_.load());
-            op.enqueued_ = true;
-            que.push_back(&op);
+            ops.push_back(&op);
           }
         }
-        op_queue_.append(static_cast<operation_queue&&>(que));
+        op_queue_.append(static_cast<operation_queue&&>(ops));
         return result;
       }
 
@@ -331,7 +334,7 @@ namespace sio {
       std::atomic<int> submissions_in_flight_{0};
       uint64_t submitted_{0};
       operation_queue op_queue_{};
-      atomic_task_queue requests_{};
+      atomic_operation_queue requests_{};
       std::optional<stdexec::in_place_stop_source> stop_source_{std::in_place};
     };
 
@@ -626,7 +629,6 @@ namespace sio {
         }
 
         static void wakeup(operation_base* op) noexcept {
-          assert(op->enqueued_.load() == false);
           auto self = static_cast<socket_operation_facade*>(op);
           self->remove_events();
           self->base_.execute();

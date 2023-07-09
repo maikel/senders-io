@@ -9,6 +9,8 @@ endif ()
 
 find_package(Catch2 REQUIRED)
 
+add_compile_options(-fno-access-control)
+
 add_executable(test_sio
   test_main.cpp
   test_async_resource.cpp
