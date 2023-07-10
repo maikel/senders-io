@@ -130,8 +130,10 @@ namespace sio {
       op->vtable_->execute_(op);
     }
 
-    using time_point = std::chrono::time_point<std::chrono::steady_clock>;
+
     class epoll_context;
+
+    using time_point = std::chrono::time_point<std::chrono::steady_clock>;
 
     struct schedule_at_base_task : operation_base {
       static constexpr uint32_t timer_elapsed = 1;
@@ -174,6 +176,9 @@ namespace sio {
             // Make emplacement of stop source visible to other threads
             // and open the door for new submissions.
             submissions_in_flight_.store(0, std::memory_order_release);
+
+            // For eventfd.
+            ++epoll_submitted_;
           }
         }
 
@@ -182,21 +187,23 @@ namespace sio {
         }};
 
         op_queue_.append(requests_.pop_all());
-        while (submitted_ > 0 || !op_queue_.empty()) {
+        while (epoll_submitted_ > 0 || !op_queue_.empty()) {
           execute_operations();
-          if (submitted_ == 0 || (break_loop_.load(std::memory_order_acquire))) {
+          if (
+            epoll_submitted_ == 0
+            || (epoll_submitted_ == 1 && break_loop_.load(std::memory_order_acquire))) {
             break_loop_.store(false, std::memory_order_relaxed);
             break;
           }
           // TODO(xiaoming): timers
-          submitted_ -= acquire_operations_from_epoll();
-          SIO_ASSERT(0 <= submitted_);
+          epoll_submitted_ -= acquire_operations_from_epoll();
+          SIO_ASSERT(0 <= epoll_submitted_);
           op_queue_.append(requests_.pop_all());
         }
 
-        SIO_ASSERT(submitted_ <= 1);
+        SIO_ASSERT(epoll_submitted_ <= 1);
         if (stop_source_->stop_requested() && op_queue_.empty()) {
-          SIO_ASSERT(submitted_ == 0);
+          SIO_ASSERT(epoll_submitted_ == 0);
           // try to shutdown the request queue
           int in_flight_expected = 0;
           while (submissions_in_flight_.compare_exchange_weak(
@@ -210,7 +217,8 @@ namespace sio {
           // There could have been requests in flight. Stop them.
           op_queue_.append(requests_.pop_all());
           operation_base* op = nullptr;
-          while ((op = op_queue_.pop_front())) {
+          while (!op_queue_.empty()) {
+            op = op_queue_.pop_front();
             stop_this_operation(op);
           }
         }
@@ -311,19 +319,24 @@ namespace sio {
         throw_error_code_if(result < 0, errno);
 
         operation_queue ops;
+
         for (int i = 0; i < result; ++i) {
-          if (events[i].data.ptr == &event_fd_) {
-            return 0;
+          if (events[i].data.ptr == &epoll_fd_) {
+
           } else if (events[i].data.ptr == &timer_fd_) {
-            return 0;
+            // TODO(xiaoming)
           } else {
-            auto& op = *reinterpret_cast<operation_base*>(events[i].data.ptr);
-            ops.push_back(&op);
+            auto op = reinterpret_cast<operation_base*>(events[i].data.ptr);
+            ops.push_back(op);
           }
         }
         op_queue_.append(static_cast<operation_queue&&>(ops));
-        return result;
+
+        // The count of eventfd won't be removed until context is stopped.
+        return stop_requested() ? result : result - 1;
       }
+
+      friend struct wakeup_operation;
 
       // This constant is used for submissions_in_flight to indicate that
       // no new submissions to this context will be completed by this context.
@@ -332,7 +345,7 @@ namespace sio {
       std::atomic<bool> is_running_{false};
       std::atomic<bool> break_loop_{false};
       std::atomic<int> submissions_in_flight_{0};
-      uint64_t submitted_{0};
+      uint64_t epoll_submitted_{0};
       operation_queue op_queue_{};
       atomic_operation_queue requests_{};
       std::optional<stdexec::in_place_stop_source> stop_source_{std::in_place};
@@ -620,6 +633,7 @@ namespace sio {
             self->base_.ec_.clear();
             self->vtable_.execute_ = wakeup;
             self->add_events();
+            self->base_.context().increment_epoll_submitted();
           }
         }
 
@@ -631,6 +645,7 @@ namespace sio {
         static void wakeup(operation_base* op) noexcept {
           auto self = static_cast<socket_operation_facade*>(op);
           self->remove_events();
+          self->base_.context().decrement_epoll_submitted();
           self->base_.execute();
         }
 

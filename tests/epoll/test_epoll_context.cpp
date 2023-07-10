@@ -57,8 +57,52 @@ TEST_CASE("epoll_context schedule operations in multiply threads", "[epoll_conte
   CHECK(ctx.execute_operations() == task_cnt * thread_cnt);
 }
 
-TEST_CASE("epoll context should wakeup from ::epoll_wait", "[epoll_context]") {
+TEST_CASE("check properties for stopped epoll context", "[epoll_context]") {
   epoll_context ctx{};
-  std::jthread io_thread([&] { CHECK(ctx.acquire_operations_from_epoll() == 0); });
-  ctx.wakeup();
+  std::jthread io_thread([&] { ctx.run_until_stopped(); });
+  constexpr int task_cnt = 50000;
+  constexpr int thread_cnt = 20;
+  std::vector<std::jthread> threads;
+  for (int i = 0; i < thread_cnt; ++i) {
+    threads.emplace_back([&] {
+      for (int j = 0; j < task_cnt; ++j) {
+        increment_operation* op = new increment_operation;
+        CHECK(ctx.schedule(op));
+      }
+    });
+  }
+
+  std::this_thread::sleep_for(600ms);
+  ctx.request_stop();
+  CHECK(!ctx.is_running());
+  CHECK(ctx.stop_requested());
+  CHECK(!ctx.break_loop_);
+  CHECK(ctx.submissions_in_flight_ == epoll_context::no_new_submissions);
+  CHECK(ctx.epoll_submitted_ == 0);
+  CHECK(ctx.op_queue_.empty());
+  CHECK(ctx.requests_.empty());
+  CHECK(!ctx.stop_source_.has_value());
+}
+
+TEST_CASE("Epoll context wakeup multiply times by multi-threads is safe", "[epoll_context]") {
+  epoll_context ctx{};
+  std::jthread io_thread([&] { ctx.run_until_stopped(); });
+  constexpr size_t thread_cnt = 10;
+
+  for (int n = 0; n < thread_cnt; ++n) {
+    std::jthread thr([&ctx] {
+      for (int i = 0; i < 100; ++i) {
+        ctx.wakeup();
+      }
+    });
+  }
+
+  ctx.request_stop();
+  for (int n = 0; n < thread_cnt; ++n) {
+    std::jthread thr([&ctx] {
+      for (int i = 0; i < 100; ++i) {
+        ctx.wakeup();
+      }
+    });
+  }
 }
