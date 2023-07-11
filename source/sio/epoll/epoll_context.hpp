@@ -316,13 +316,14 @@ namespace sio {
         epoll_event events[epoll_event_max_count];
         int timeout = op_queue_.empty() ? -1 : 0;
         int result = ::epoll_wait(epoll_fd_, events, epoll_event_max_count, timeout);
-        throw_error_code_if(result < 0, errno);
+        if (result <= 0) {
+          throw_error_code_if(result < 0, errno);
+          return 0;
+        }
 
         operation_queue ops;
-
         for (int i = 0; i < result; ++i) {
           if (events[i].data.ptr == &event_fd_) {
-
           } else if (events[i].data.ptr == &timer_fd_) {
             // TODO(xiaoming)
           } else {
@@ -335,8 +336,6 @@ namespace sio {
         // The count of eventfd won't be removed until context is stopped.
         return stop_requested() ? result : result - 1;
       }
-
-      friend struct wakeup_operation;
 
       // This constant is used for submissions_in_flight to indicate that
       // no new submissions to this context will be completed by this context.
