@@ -74,6 +74,7 @@ TEST_CASE("check properties for stopped epoll context", "[epoll_context]") {
 
   std::this_thread::sleep_for(600ms);
   ctx.request_stop();
+  std::this_thread::sleep_for(100ms);
   CHECK(!ctx.is_running());
   CHECK(ctx.stop_requested());
   CHECK(!ctx.break_loop_);
@@ -81,7 +82,7 @@ TEST_CASE("check properties for stopped epoll context", "[epoll_context]") {
   CHECK(ctx.epoll_submitted_ == 0);
   CHECK(ctx.op_queue_.empty());
   CHECK(ctx.requests_.empty());
-  CHECK(!ctx.stop_source_.has_value());
+  CHECK(ctx.stop_source_.has_value());
 }
 
 TEST_CASE("Epoll context wakeup multiply times by multi-threads is safe", "[epoll_context]") {

@@ -176,10 +176,10 @@ namespace sio {
             // Make emplacement of stop source visible to other threads
             // and open the door for new submissions.
             submissions_in_flight_.store(0, std::memory_order_release);
-
-            // For eventfd.
-            ++epoll_submitted_;
           }
+
+          // For eventfd.
+          ++epoll_submitted_;
         }
 
         exec::scope_guard set_not_running{[&]() noexcept {
@@ -321,7 +321,7 @@ namespace sio {
         operation_queue ops;
 
         for (int i = 0; i < result; ++i) {
-          if (events[i].data.ptr == &epoll_fd_) {
+          if (events[i].data.ptr == &event_fd_) {
 
           } else if (events[i].data.ptr == &timer_fd_) {
             // TODO(xiaoming)
