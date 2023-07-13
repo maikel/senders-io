@@ -10,6 +10,7 @@
 using namespace sio;
 using namespace sio::epoll;
 using namespace std;
+using namespace stdexec;
 
 struct increment_operation : operation_base {
   ~increment_operation() {
@@ -121,4 +122,13 @@ TEST_CASE("Context wakeup multi-times by multi-threads should be safe", "[epoll_
       }
     });
   }
+}
+
+TEST_CASE("test stdexec stuff", "[epoll_context]") {
+  epoll_context ctx{};
+  std::jthread io_thr([&]() { ctx.run_until_stopped(); });
+
+  sender auto s = on(ctx.get_scheduler(), just() | then([]() {}));
+  stdexec::sync_wait(std::move(s));
+  ctx.request_stop();
 }

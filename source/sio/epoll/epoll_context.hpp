@@ -696,7 +696,10 @@ namespace sio {
             stdexec::receiver_of<completion_signatures> Receiver>
           friend auto tag_invoke(stdexec::connect_t, Sender&& self, Receiver receiver) noexcept
             -> op_t<Receiver> {
-            return {static_cast<__t&&>(self).env_.context_, static_cast<Receiver&&>(receiver)};
+            return op_t<Receiver>{
+              std::in_place,
+              *(static_cast<__t&&>(self).env_.context_),
+              static_cast<Receiver&&>(receiver)};
           }
 
           explicit __t(schedule_env env) noexcept
