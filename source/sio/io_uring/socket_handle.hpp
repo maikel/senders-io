@@ -18,7 +18,6 @@
 #include "./file_handle.hpp"
 
 #include "../net_concepts.hpp"
-#include "../deferred.hpp"
 
 namespace sio::io_uring {
   template <class Protocol>
@@ -155,6 +154,20 @@ namespace sio::io_uring {
     };
   }
 
+
+  struct sendmsg_sender {
+    using is_sender = void;
+    using completion_signatures = stdexec::completion_signatures<
+      stdexec::set_value_t(std::size_t),
+      stdexec::set_error_t(std::error_code),
+      stdexec::set_stopped_t()>;
+
+    exec::io_uring_context* context_;
+    int fd_;
+    ::msghdr msg_;
+  };
+
+
   template <class Protocol>
   struct socket_handle : byte_stream {
     socket_handle(exec::io_uring_context& context, int fd, Protocol proto) noexcept
@@ -168,6 +181,10 @@ namespace sio::io_uring {
 
     connect_::sender<Protocol> connect(async::connect_t, endpoint peer_endpoint) const noexcept {
       return {this->context_, peer_endpoint, fd_};
+    }
+
+    sendmsg_sender sendmsg(async::sendmsg_t, ::msghdr msg) const noexcept {
+      return {this->context_, fd_, msg};
     }
 
     endpoint local_endpoint() const;
@@ -194,6 +211,12 @@ namespace sio::io_uring {
       return {&context_, protocol_, &fd_};
     }
   };
+
+  template <class Protocol>
+  socket(exec::io_uring_context&, Protocol) -> socket<Protocol>;
+
+  template <class Protocol>
+  socket(exec::io_uring_context*, Protocol) -> socket<Protocol>;
 
   namespace socket_ {
     template <class Protocol, class Receiver>
@@ -308,12 +331,12 @@ namespace sio::io_uring {
   };
 
   template <class Protocol>
-  struct acceptor_resource {
+  struct acceptor {
     exec::io_uring_context& context_;
     Protocol protocol_;
     typename Protocol::endpoint local_endpoint_;
 
-    explicit acceptor_resource(
+    explicit acceptor(
       exec::io_uring_context& context,
       Protocol protocol,
       typename Protocol::endpoint ep) noexcept
@@ -322,7 +345,7 @@ namespace sio::io_uring {
       , local_endpoint_(ep) {
     }
 
-    explicit acceptor_resource(
+    explicit acceptor(
       exec::io_uring_context* context,
       Protocol protocol,
       typename Protocol::endpoint ep) noexcept
@@ -352,15 +375,8 @@ namespace sio::io_uring {
     }
   };
 
-  template <class Proto>
-  auto make_deferred_socket(exec::io_uring_context* ctx, Proto proto) {
-    return make_deferred<socket<Proto>>(ctx, proto);
-  }
-
-  template <class Proto>
-  auto
-    make_deferred_acceptor(exec::io_uring_context* ctx, Proto proto, typename Proto::endpoint ep) {
-    return make_deferred<acceptor_resource<Proto>>(ctx, proto, ep);
-  }
+  template <class Protocol>
+  acceptor(exec::io_uring_context&, Protocol, typename Protocol::endpoint)
+    -> acceptor<Protocol>;
 
 }

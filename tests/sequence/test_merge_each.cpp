@@ -74,7 +74,9 @@ TEST_CASE("merge_each - two senders count with ignore_all", "[merge_each][ignore
   CHECK(count == 2);
 }
 
-TEST_CASE("merge_each - iterate and senders count with ignore_all", "[merge_each][ignore_all][then_each][iterate]") {
+TEST_CASE(
+  "merge_each - iterate and senders count with ignore_all",
+  "[merge_each][ignore_all][then_each][iterate]") {
   std::array<int, 2> arr{42, 42};
   int count = 0;
   auto merge = sio::merge_each(stdexec::just(42), sio::iterate(arr)) //
@@ -84,4 +86,28 @@ TEST_CASE("merge_each - iterate and senders count with ignore_all", "[merge_each
                });
   CHECK(stdexec::sync_wait(sio::ignore_all(merge)));
   CHECK(count == 3);
+}
+
+TEST_CASE("merge_each - for subsequences", "[merge_each][then_each][iterate]") {
+  std::array<int, 2> indices{1, 2};
+  int counter = 0;
+  auto merge = sio::iterate(indices) //
+             | sio::then_each([](int i) {
+                 return sio::iterate(std::array<int, 2>{i, i});
+               })                //
+             | sio::merge_each()
+             | sio::then_each([&](int value) {
+                 if (counter == 0)
+                   CHECK(value == 1);
+                 else if (counter == 1)
+                   CHECK(value == 1);
+                 else if (counter == 2)
+                   CHECK(value == 2);
+                 else if (counter == 3)
+                   CHECK(value == 2);
+                 else
+                   CHECK(false);
+                 ++counter;
+               });
+  CHECK(stdexec::sync_wait(sio::ignore_all(merge)));
 }

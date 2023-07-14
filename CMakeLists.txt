@@ -56,6 +56,7 @@ target_sources(sio PUBLIC
     source/sio/io_uring/socket_handle.hpp
     source/sio/assert.hpp
     source/sio/async_allocator.hpp
+    source/sio/async_mutex.hpp
     source/sio/async_resource.hpp
     source/sio/concepts.hpp
     source/sio/deferred.hpp

@@ -42,15 +42,13 @@ auto echo_input(tcp_socket client) {
 
 int main() {
   exec::io_uring_context context{};
-  auto acceptor = sio::io_uring::make_deferred_acceptor(
+  auto acceptor = sio::io_uring::acceptor(
     &context, sio::ip::tcp::v4(), sio::ip::endpoint{sio::ip::address_v4::any(), 1080});
 
   auto accept_connections = sio::async::use_resources(
     [&](tcp_acceptor acceptor) {
       return sio::async::accept(acceptor) //
-           | sio::let_value_each([](tcp_socket client) {
-               return echo_input(client);
-             })
+           | sio::let_value_each([](tcp_socket client) { return echo_input(client); })
            | sio::ignore_all();
     },
     acceptor);

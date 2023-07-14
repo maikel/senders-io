@@ -13,14 +13,9 @@ void sync_wait(exec::io_uring_context& context, Sender&& sender) {
   stdexec::sync_wait(exec::when_any(std::forward<Sender>(sender), context.run(exec::until::stopped)));
 }
 
-template <class Proto>
-auto make_deferred_socket(exec::io_uring_context* ctx, Proto proto) {
-  return sio::make_deferred<sio::io_uring::socket<Proto>>(ctx, proto);
-}
-
 TEST_CASE("socket_handle - Open a socket", "[socket_handle]") {
   exec::io_uring_context context{};
-  auto socket = make_deferred_socket(&context, sio::ip::tcp::v4());
+  auto socket = sio::io_uring::socket(&context, sio::ip::tcp::v4());
   sync_wait(
     context,
     sio::async::use_resources(
@@ -34,8 +29,8 @@ TEST_CASE("socket_handle - Open a socket", "[socket_handle]") {
 TEST_CASE("socket_handle - Connect to localhost", "[socket_handle][connect]") {
   exec::io_uring_context context{};
   exec::single_thread_context thread{};
-  auto server = make_deferred_socket(&context, sio::ip::tcp::v4());
-  auto client = make_deferred_socket(&context, sio::ip::tcp::v4());
+  auto server = sio::io_uring::socket(&context, sio::ip::tcp::v4());
+  auto client = sio::io_uring::socket(&context, sio::ip::tcp::v4());
   sio::ip::endpoint ep{sio::ip::address_v4::loopback(), 4242};
   sync_wait(
     context,

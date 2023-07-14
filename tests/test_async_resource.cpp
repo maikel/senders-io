@@ -19,7 +19,7 @@
 #include <catch2/catch.hpp>
 
 struct Token {
-  auto close(sio::async::close_t) const noexcept { 
+  auto close(sio::async::close_t) const noexcept {
     return stdexec::just();
   }
 };
@@ -42,9 +42,7 @@ TEST_CASE("async_resource - sequence", "[async_resource]") {
 }
 
 TEST_CASE("async_resource - use_resources", "[async_resource]") {
-  auto sndr = sio::async::use_resources([](Token) {
-    return stdexec::just(42);
-  }, sio::make_deferred<Resource>());
+  auto sndr = sio::async::use_resources([](Token) { return stdexec::just(42); }, Resource());
   auto result = stdexec::sync_wait(sndr);
   CHECK(result);
   auto [value] = result.value();

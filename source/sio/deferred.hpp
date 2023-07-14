@@ -10,7 +10,7 @@ namespace sio {
   template <class T>
   struct construct_t {
     template <class... Args>
-    requires constructible_from<T, Args...>
+      requires constructible_from<T, Args...>
     T operator()(Args&&... args) const noexcept(nothrow_constructible_from<T, Args...>) {
       return T(static_cast<Args&&>(args)...);
     }
@@ -19,58 +19,81 @@ namespace sio {
   template <class Tp, class Fn, class... Args>
   class deferred {
    private:
-    std::variant<std::tuple<Args...>, Tp> data_;
-    [[no_unique_address]] Fn fun_{};
+    union storage {
+      std::tuple<Args...> args;
+      Tp value;
+
+      template <class... As>
+      storage(As&&... args)
+        : args(static_cast<As&&>(args)...) {
+      }
+
+      storage(const storage& other)
+        : args{other.args} {
+      }
+
+      storage(storage&& other) noexcept
+        : args{std::move(other.args)} {
+      }
+
+      storage& operator=(const storage& other) = delete;
+      storage& operator=(storage&&) noexcept = delete;
+
+      ~storage() {
+      }
+    } data_;
+
+    bool emplaced_;
    public:
     template <class... As>
       requires constructible_from<std::tuple<Args...>, As...>
     explicit deferred(As&&... args) noexcept(nothrow_constructible_from<std::tuple<Args...>, As...>)
-      : data_(std::in_place_index<0>, static_cast<As&&>(args)...) {
+      : data_(static_cast<As&&>(args)...) {
     }
 
     template <class... As>
       requires constructible_from<std::tuple<Args...>, As...>
     explicit deferred(Fn fun, As&&... args) noexcept(
       nothrow_constructible_from<std::tuple<Args...>, As...>)
-      : data_(std::in_place_index<0>, static_cast<As&&>(args)...)
-      , fun_{static_cast<Fn&&>(fun)} {
+      : data_(static_cast<As&&>(args)...) {
     }
 
-    deferred(deferred&& other) noexcept((nothrow_move_constructible<Args> && ...)) 
-    : data_{static_cast<std::variant<std::tuple<Args...>, Tp>&&>(other.data_)}
-    , fun_{static_cast<Fn&&>(other.fun_)}
-    {
-      SIO_ASSERT(data_.index() == 0);
+    deferred(deferred&& other) noexcept((nothrow_move_constructible<Args> && ...))
+      : data_{static_cast<storage&&>(other.data_)} {
     }
 
     deferred& operator=(deferred&&) = delete;
 
     deferred(const deferred& other) noexcept((nothrow_copy_constructible<Args> && ...))
-    : data_{other.data_}
-    , fun_{other.fun_}
-    {
-      SIO_ASSERT(data_.index() == 0);
+      : data_{other.data_} {
+    }
+
+    ~deferred() {
+      if (emplaced_) {
+        std::destroy_at(&data_.value);
+      } else {
+        std::destroy_at(&data_.args);
+      }
     }
 
     deferred& operator=(const deferred&) = delete;
 
     void operator()() noexcept(nothrow_constructible_from<Tp, call_result_t<Fn, Args...>>) {
-      SIO_ASSERT(data_.index() == 0);
-      std::tuple<Args...>& tup = *std::get_if<0>(&data_);
-      data_.template emplace<1>(
-        std::apply(
-          [this]<class... As>(As&&... args) { return fun_(static_cast<As&&>(args)...); },
-          static_cast<std::tuple<Args...>&&>(tup)));
+      std::tuple<Args...> tup = static_cast<std::tuple<Args...>&&>(data_.args);
+      std::destroy_at(&data_.args);
+      std::apply(
+        [this]<class... As>(As&&... args) {
+          return std::construct_at(&data_.value, static_cast<As&&>(args)...);
+        },
+        static_cast<std::tuple<Args...>&&>(tup));
     }
 
     Tp& operator*() noexcept {
-      SIO_ASSERT(data_.index() == 1);
-      return *std::get_if<1>(&data_);
+      return data_.value;
     }
 
     const Tp& operator*() const noexcept {
-      SIO_ASSERT(data_.index() == 1);
-      return *std::get_if<1>(&data_);
+      return data_.value;
     }
   };
 

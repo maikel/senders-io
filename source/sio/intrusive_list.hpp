@@ -19,8 +19,46 @@
 
 #include <tuple>
 #include <utility>
+#include <ranges>
 
 namespace sio {
+  template <auto Next>
+  struct intrusive_iterator;
+
+  template <class Item, Item* Item::*Next>
+  struct intrusive_iterator<Next>
+  {
+    using difference_type = std::ptrdiff_t;
+    Item* item_ = nullptr;
+
+    Item& operator*() const noexcept {
+      return *item_;
+    }
+
+    Item* operator->() const noexcept {
+      return item_;
+    }
+
+    intrusive_iterator& operator++() noexcept {
+      item_ = item_->*Next;
+      return *this;
+    }
+
+    intrusive_iterator operator++(int) noexcept {
+      intrusive_iterator copy{*this};
+      item_ = item_->*Next;
+      return copy;
+    }
+
+    friend bool operator==(const intrusive_iterator& lhs, const intrusive_iterator& rhs) noexcept {
+      return lhs.item_ == rhs.item_;
+    }
+
+    friend bool operator!=(const intrusive_iterator& lhs, const intrusive_iterator& rhs) noexcept {
+      return lhs.item_ != rhs.item_;
+    }
+  };
+
   template <auto Next, auto Prev>
   class intrusive_list;
 
@@ -38,6 +76,14 @@ namespace sio {
       std::swap(head_, other.head_);
       std::swap(tail_, other.tail_);
       return *this;
+    }
+
+    intrusive_iterator<Next> begin() const noexcept {
+      return intrusive_iterator<Next>{head_};
+    }
+
+    intrusive_iterator<Next> end() const noexcept {
+      return intrusive_iterator<Next>{};
     }
 
     [[nodiscard]] bool empty() const noexcept {

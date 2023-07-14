@@ -93,6 +93,7 @@ namespace sio {
         struct env_t {
           const vtable_t* vtable_;
           void* rcvr_;
+          stdexec::in_place_stop_token token_;
 
           template <class Tag, stdexec::same_as<env_t> Self, class... As>
             requires callable<const vtable_t&, Tag, void*, As...>
@@ -100,6 +101,11 @@ namespace sio {
             nothrow_callable<const vtable_t&, Tag, void*, As...>)
             -> call_result_t<const vtable_t&, Tag, void*, As...> {
             return (*self.vtable_)(Tag{}, self.rcvr_, (As&&) as...);
+          }
+
+          friend stdexec::in_place_stop_token
+            tag_invoke(stdexec::get_stop_token_t, const env_t& self) noexcept {
+            return self.token_;
           }
         } env_;
 
@@ -111,7 +117,8 @@ namespace sio {
         receiver_ref(Rcvr& __rcvr) noexcept
           : env_{
             exec::__any::__create_vtable(stdexec::__mtype<vtable_t>{}, stdexec::__mtype<Rcvr>{}),
-            &__rcvr} {
+            &__rcvr,
+            stdexec::get_stop_token(stdexec::get_env(__rcvr))} {
         }
 
         template <class Sender>
@@ -137,10 +144,17 @@ namespace sio {
         }
 
         void set_stopped(stdexec::set_stopped_t) && noexcept
-          requires stdexec::__v<
-            stdexec::__mapply<stdexec::__contains<stdexec::set_stopped_t()>, compl_sigs>>
         {
-          (*static_cast<const vfun<stdexec::set_stopped_t()>*>(env_.vtable_)->__fn_)(env_.rcvr_);
+          if constexpr (stdexec::__v<
+            stdexec::__mapply<stdexec::__contains<stdexec::set_stopped_t()>, compl_sigs>>) {
+              if (env_.token_.stop_requested()) {
+                (*static_cast<const vfun<stdexec::set_stopped_t()>*>(env_.vtable_)->__fn_)(env_.rcvr_);
+              } else {
+                (*static_cast<const vfun<stdexec::set_value_t()>*>(env_.vtable_)->__fn_)(env_.rcvr_);
+              }
+          } else {
+            (*static_cast<const vfun<stdexec::set_value_t()>*>(env_.vtable_)->__fn_)(env_.rcvr_);
+          }
         }
 
         const env_t& get_env(stdexec::get_env_t) const noexcept {
