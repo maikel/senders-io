@@ -359,12 +359,18 @@ namespace sio {
 
     template <std::size_t Index, class Item, class Receiver, class ResultTuple, class ErrorsVariant>
     struct item_sender {
+      struct type;
+    };
+
+    template <std::size_t Index, class Item, class Receiver, class ResultTuple, class ErrorsVariant>
+    struct item_sender<Index, Item, Receiver, ResultTuple, ErrorsVariant>::type {
+      using is_sender = void;
       [[no_unique_address]] Item item_;
       operation_base<Receiver, ResultTuple, ErrorsVariant>* op_;
 
       using completion_signatures = stdexec::completion_signatures<set_value_t(), set_stopped_t()>;
 
-      template <same_as<item_sender> Self, class ItemReceiver>
+      template <same_as<type> Self, class ItemReceiver>
       static auto connect(Self&& self, stdexec::connect_t, ItemReceiver item_rcvr)
         -> item_operation<
           Index,
@@ -379,11 +385,12 @@ namespace sio {
 
     template <std::size_t Index, class Receiver, class ResultTuple, class ErrorsVariant>
     struct receiver {
+      using is_receiver = void;
       operation_base<Receiver, ResultTuple, ErrorsVariant>* op_;
 
       template <class Item>
       auto set_next(exec::set_next_t, Item&& item) noexcept(nothrow_decay_copyable<Item>)
-        -> item_sender<Index, decay_t<Item>, Receiver, ResultTuple, ErrorsVariant> {
+        -> typename item_sender<Index, decay_t<Item>, Receiver, ResultTuple, ErrorsVariant>::type {
         return {static_cast<Item&&>(item), op_};
       }
 
@@ -456,7 +463,7 @@ namespace sio {
       __value_types_of_t<
         Sender,
         Env,
-        __transform<__q<decay_rvalue_ref>, __q<__types>>,
+        __transform<__q<decay_t>, __q<__types>>,
         __q<__msingle>>;
 
     template <class Env>
@@ -476,7 +483,7 @@ namespace sio {
     template <class Env, max1_sender<Env>... Senders>
     using completions_t = //
       __concat_completion_signatures_t<
-        completion_signatures<set_stopped_t(), set_error_t(std::exception_ptr&&)>,
+        completion_signatures<set_stopped_t(), set_error_t(std::exception_ptr)>,
         __minvoke<
           __with_default<__mbind_front_q<set_values_sig_t, Env>, completion_signatures<>>,
           Senders...>,
@@ -485,7 +492,7 @@ namespace sio {
           Env,
           completion_signatures<>,
           __mconst<completion_signatures<>>,
-          __mcompose<__q<completion_signatures>, __qf<set_error_t>, __q<decay_rvalue_ref>>>...>;
+          __mcompose<__q<completion_signatures>, __qf<set_error_t>, __q<decay_t>>>...>;
 
     template <class Receiver, class... Senders>
     struct traits {
@@ -552,11 +559,16 @@ namespace sio {
 
     template <std::size_t... Is, class... Senders>
     struct sender<std::index_sequence<Is...>, Senders...> {
+      struct type;
+    };
+
+    template <std::size_t... Is, class... Senders>
+    struct sender<std::index_sequence<Is...>, Senders...>::type {
       using is_sender = exec::sequence_tag;
 
       std::tuple<Senders...> senders_;
 
-      template <decays_to<sender> Self, class Receiver>
+      template <decays_to<type> Self, class Receiver>
       static auto subscribe(Self&& self, exec::subscribe_t, Receiver rcvr) //
         noexcept(nothrow_constructible_from<
                  operation<Receiver, copy_cvref_t<Self, Senders>...>,
@@ -570,7 +582,7 @@ namespace sio {
           std::index_sequence<Is...>{}};
       }
 
-      template <decays_to<sender> Self, class Env>
+      template <decays_to<type> Self, class Env>
       static auto
         get_completion_signatures(Self&& self, stdexec::get_completion_signatures_t, Env&& env)
           -> completions_t<Env, Senders...>;
@@ -579,7 +591,7 @@ namespace sio {
     struct zip_t {
       template <stdexec::sender... Senders>
       auto operator()(Senders&&... senders) const noexcept((nothrow_decay_copyable<Senders> && ...))
-        -> sender<std::index_sequence_for<Senders...>, decay_t<Senders>...> {
+        -> typename sender<std::index_sequence_for<Senders...>, decay_t<Senders>...>::type {
         return {{static_cast<Senders&&>(senders)...}};
       }
     };

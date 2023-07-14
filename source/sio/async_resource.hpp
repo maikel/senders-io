@@ -325,13 +325,8 @@ namespace sio::async {
   struct use_resources_t {
     template <class Fn, class... DeferredResources>
     auto operator()(Fn&& fn, DeferredResources&&... resources) const {
-      return stdexec::let_value(
-        stdexec::just(static_cast<Fn&&>(fn), static_cast<DeferredResources&&>(resources)...),
-        []<class Fun, class... Deferred>(Fun&& fun, Deferred&... res) {
-          (res(), ...);
-          return sio::first(
-            sio::let_value_each(sio::zip(sio::async::run(*res)...), static_cast<Fun&&>(fun)));
-        });
+      return sio::first(
+        sio::let_value_each(sio::zip(sio::async::run(resources)...), static_cast<Fn&&>(fn)));
     }
   };
 
