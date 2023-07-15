@@ -167,7 +167,7 @@ namespace sio::async {
     };
 
     template <class Token, class ItemReceiver>
-    struct run_operation {
+    struct use_operation {
       std::optional<Token>& token_;
       [[no_unique_address]] ItemReceiver rcvr_;
 
@@ -177,7 +177,7 @@ namespace sio::async {
     };
 
     template <class Token>
-    struct run_sender {
+    struct use_sender {
       using is_sender = void;
 
       std::optional<Token>& token_;
@@ -186,7 +186,7 @@ namespace sio::async {
 
       template <class ItemReceiver>
       auto connect(stdexec::connect_t, ItemReceiver rcvr) const
-        noexcept(nothrow_decay_copyable<ItemReceiver>) -> run_operation<Token, ItemReceiver> {
+        noexcept(nothrow_decay_copyable<ItemReceiver>) -> use_operation<Token, ItemReceiver> {
         return {token_, static_cast<ItemReceiver&&>(rcvr)};
       }
     };
@@ -200,9 +200,9 @@ namespace sio::async {
 
       std::optional<Token> token_{};
       std::optional<stdexec::connect_result_t<
-        finally_t<exec::next_sender_of_t<Receiver, run_sender<Token>>, close_sender_of_t<Token>>,
+        finally_t<exec::next_sender_of_t<Receiver, use_sender<Token>>, close_sender_of_t<Token>>,
         final_receiver<Receiver>>>
-        run_op_{};
+        use_op_{};
     };
 
     template <class Token, class Receiver>
@@ -218,12 +218,12 @@ namespace sio::async {
       void set_value(stdexec::set_value_t, Token token) && noexcept {
         try {
           Token& t = op_->token_.emplace(static_cast<Token&&>(token));
-          auto& run_op = op_->run_op_.emplace(stdexec::__conv{[&] {
+          auto& use_op = op_->use_op_.emplace(stdexec::__conv{[&] {
             return stdexec::connect(
-              exec::finally(exec::set_next(op_->rcvr_, run_sender<Token>{op_->token_}), close(t)),
+              exec::finally(exec::set_next(op_->rcvr_, use_sender<Token>{op_->token_}), close(t)),
               final_receiver<Receiver>{op_});
           }});
-          stdexec::start(run_op);
+          stdexec::start(use_op);
         } catch (...) {
           stdexec::set_error(static_cast<Receiver&&>(op_->rcvr_), std::current_exception());
         }
@@ -275,58 +275,58 @@ namespace sio::async {
           stdexec::completion_signatures<stdexec::set_error_t(std::exception_ptr)>>;
     };
 
-    struct run_t;
-    extern const run_t run;
+    struct use_t;
+    extern const use_t use;
 
     template <class Resource>
-    concept has_run_member_cpo = requires(Resource& resource) { resource.run(run); };
+    concept has_use_member_cpo = requires(Resource& resource) { resource.use(use); };
 
     template <class Resource>
-    concept has_static_run_member_cpo = requires(Resource& resource) {
-      Resource::run(resource, run);
+    concept has_static_use_member_cpo = requires(Resource& resource) {
+      Resource::use(resource, use);
     };
 
     template <class Resource>
-    concept has_run_member = has_run_member_cpo<Resource> || has_static_run_member_cpo<Resource>;
+    concept has_use_member = has_use_member_cpo<Resource> || has_static_use_member_cpo<Resource>;
 
     template <class Resource>
-    concept no_run_member = !has_run_member<Resource>;
+    concept no_use_member = !has_use_member<Resource>;
 
-    struct run_t {
-      template <has_run_member Resource>
+    struct use_t {
+      template <has_use_member Resource>
       auto operator()(Resource& resource) const noexcept {
-        if constexpr (has_run_member_cpo<Resource>) {
-          return resource.run(run);
+        if constexpr (has_use_member_cpo<Resource>) {
+          return resource.use(use);
         } else {
-          return Resource::run(resource, run);
+          return Resource::use(resource, use);
         }
       }
 
-      template <no_run_member Resource>
+      template <no_use_member Resource>
         requires with_open_and_close<Resource>
       auto operator()(Resource& resource) const noexcept -> sequence<Resource> {
         return {resource};
       }
     };
 
-    inline constexpr run_t run{};
+    inline constexpr use_t use{};
   }
 
-  using async_resource_::run_t;
-  using async_resource_::run;
+  using async_resource_::use_t;
+  using async_resource_::use;
 
   template <class Resource>
-  concept resource = requires(Resource&& __resource) { run(__resource); };
+  concept resource = requires(Resource&& __resource) { use(__resource); };
 
   template <resource Resource, class Env = stdexec::empty_env>
   using resource_token_of_t =
-    stdexec::__single_sender_value_t< call_result_t<run_t, Resource&>, Env>;
+    stdexec::__single_sender_value_t< call_result_t<use_t, Resource&>, Env>;
 
   struct use_resources_t {
     template <class Fn, class... DeferredResources>
     auto operator()(Fn&& fn, DeferredResources&&... resources) const {
       return sio::first(
-        sio::let_value_each(sio::zip(sio::async::run(resources)...), static_cast<Fn&&>(fn)));
+        sio::let_value_each(sio::zip(sio::async::use(resources)...), static_cast<Fn&&>(fn)));
     }
   };
 
