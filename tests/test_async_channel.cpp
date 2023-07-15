@@ -18,15 +18,16 @@
 #include <catch2/catch.hpp>
 
 TEST_CASE("async_channel - just", "[async_channel]") {
-  sio::async_channel channel{};
+  using Sigs = stdexec::completion_signatures<stdexec::set_value_t()>;
+  sio::async_channel<Sigs> channel{};
   bool is_read = false;
-  auto use = sio::async::use_resources([&](sio::async_channel_handle handle) {
+  auto use = sio::async::use_resources([&](sio::async_channel_handle<Sigs> handle) {
     auto read = handle.subscribe() //
               | sio::first() //
               | stdexec::then([&]() noexcept {
                   is_read = true;
                 });
-    auto write = handle.notify_all();
+    auto write = handle.notify_all(stdexec::just());
     return stdexec::when_all(read, write);
   }, channel);
 
