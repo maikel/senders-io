@@ -16,7 +16,7 @@ namespace sio {
     }
   };
 
-  template <class Tp, class Fn, class... Args>
+  template <class Tp, class... Args>
   class deferred {
    private:
     union storage {
@@ -51,13 +51,6 @@ namespace sio {
       : data_(static_cast<As&&>(args)...) {
     }
 
-    template <class... As>
-      requires constructible_from<std::tuple<Args...>, As...>
-    explicit deferred(Fn fun, As&&... args) noexcept(
-      nothrow_constructible_from<std::tuple<Args...>, As...>)
-      : data_(static_cast<As&&>(args)...) {
-    }
-
     deferred(deferred&& other) noexcept((nothrow_move_constructible<Args> && ...))
       : data_{static_cast<storage&&>(other.data_)} {
     }
@@ -78,7 +71,7 @@ namespace sio {
 
     deferred& operator=(const deferred&) = delete;
 
-    void operator()() noexcept(nothrow_constructible_from<Tp, call_result_t<Fn, Args...>>) {
+    void operator()() noexcept(nothrow_constructible_from<Tp, Args...>) {
       std::tuple<Args...> tup = static_cast<std::tuple<Args...>&&>(data_.args);
       std::destroy_at(&data_.args);
       std::apply(
@@ -100,17 +93,11 @@ namespace sio {
   template <class Tp>
   struct make_deferred_t {
     template <class... Args>
-    deferred<Tp, construct_t<Tp>, decay_t<Args>...> operator()(Args&&... args) const
+    deferred<Tp, Args...> operator()(Args&&... args) const
       noexcept(nothrow_constructible_from<decayed_tuple<Args...>, Args...>) {
-      return deferred<Tp, construct_t<Tp>, decay_t<Args>...>(static_cast<Args&&>(args)...);
+      return deferred<Tp, Args...>(static_cast<Args&&>(args)...);
     }
   };
-
-  template <class Fn, class... Args>
-  deferred<call_result_t<Fn, Args...>, Fn, decay_t<Args>...> defer(Fn fun, Args&&... args) {
-    return deferred<call_result_t<Fn, Args...>, Fn, decay_t<Args>...>(
-      static_cast<Fn&&>(fun), static_cast<Args&&>(args)...);
-  }
 
   template <class Tp>
   inline constexpr make_deferred_t<Tp> make_deferred{};
