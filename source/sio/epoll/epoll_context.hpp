@@ -38,7 +38,6 @@
 #include "stdexec/execution.hpp"
 #include "stdexec/__detail/__execution_fwd.hpp"
 #include "stdexec/stop_token.hpp"
-#include "../intrusive_heap.hpp"
 #include "sio/assert.hpp"
 #include "exec/__detail/__manual_lifetime.hpp"
 #include "exec/timed_scheduler.hpp"
