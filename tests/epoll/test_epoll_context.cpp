@@ -1,6 +1,7 @@
 
 #include "sio/assert.hpp"
 #include "sio/epoll/epoll_context.hpp"
+#include <chrono>
 #include <exec/sequence_senders.hpp>
 
 #include <catch2/catch.hpp>
@@ -139,6 +140,14 @@ TEST_CASE("test stdexec stuff", "[epoll_context]") {
   std::jthread io_thr([&]() { ctx.run_until_stopped(); });
 
   sender auto s = on(ctx.get_scheduler(), just() | then([]() {}));
+  stdexec::sync_wait(std::move(s));
+  ctx.request_stop();
+}
+
+TEST_CASE("test schedule_at operation", "[epoll_context]") {
+  epoll_context ctx{};
+  std::jthread io_thr([&]() { ctx.run_until_stopped(); });
+  sender auto s = schedule_after(ctx.get_scheduler(), std::chrono::seconds(1));
   stdexec::sync_wait(std::move(s));
   ctx.request_stop();
 }

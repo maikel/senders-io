@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <bits/chrono.h>
 #include <cerrno>
 #include <concepts>
 #include <cstdint>
@@ -40,6 +41,7 @@
 #include "../intrusive_heap.hpp"
 #include "sio/assert.hpp"
 #include "exec/__detail/__manual_lifetime.hpp"
+#include "exec/timed_scheduler.hpp"
 
 namespace sio {
   namespace epoll {
@@ -71,15 +73,9 @@ namespace sio {
     struct context_base : stdexec::__immovable {
       context_base()
         : epoll_fd_(create_epoll())
-        , event_fd_(create_eventfd())
-        , timer_fd_(create_timer()) {
-        epoll_event event_ev = {
-          .events = EPOLLIN | EPOLLERR | EPOLLET, .data = {.ptr = &event_fd_}};
-        int ret = ::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, event_fd_, &event_ev);
-        throw_error_code_if(ret < 0, errno);
-
-        epoll_event timer_ev = {.events = EPOLLIN | EPOLLERR, .data = {.ptr = &timer_fd_}};
-        ret = ::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, timer_fd_, &timer_ev);
+        , event_fd_(create_eventfd()) {
+        epoll_event event = {.events = EPOLLIN | EPOLLERR | EPOLLET, .data = {.ptr = &event_fd_}};
+        int ret = ::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, event_fd_, &event);
         throw_error_code_if(ret < 0, errno);
       }
 
@@ -87,15 +83,10 @@ namespace sio {
         epoll_event event = {};
         int ret = ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, event_fd_, &event);
         throw_error_code_if(ret < 0, errno);
-
-        event = {};
-        ret = ::epoll_ctl(epoll_fd_, EPOLL_CTL_DEL, timer_fd_, &event);
-        throw_error_code_if(ret < 0, errno);
       }
 
       exec::safe_file_descriptor epoll_fd_;
       exec::safe_file_descriptor event_fd_;
-      exec::safe_file_descriptor timer_fd_;
     };
 
     struct operation_base;
@@ -127,31 +118,9 @@ namespace sio {
       op->vtable_->execute_(op);
     }
 
-
-    class epoll_context;
-
-    using time_point = std::chrono::time_point<std::chrono::steady_clock>;
-
-    struct schedule_at_base_task : operation_base {
-      static constexpr uint32_t timer_elapsed = 1;
-      static constexpr uint32_t cancel_pending = 2;
-
-      schedule_at_base_task* timer_next_{nullptr};
-      schedule_at_base_task* timer_prev_{nullptr};
-      epoll_context& ctx_;
-      time_point due_time_{};
-      bool can_be_cancelled_{true};
-      std::atomic<uint32_t> state_{0};
-    };
-
     using operation_queue = stdexec::__intrusive_queue<&operation_base::next_>;
     using atomic_operation_queue = exec::__atomic_intrusive_queue<&operation_base::next_>;
-    using timer_heap = intrusive_heap<
-      schedule_at_base_task,
-      &schedule_at_base_task::timer_next_,
-      &schedule_at_base_task::timer_prev_,
-      time_point,
-      &schedule_at_base_task::due_time_>;
+    using time_point = std::chrono::time_point<std::chrono::steady_clock>;
 
     class scheduler;
 
@@ -176,7 +145,7 @@ namespace sio {
           }
 
           // For eventfd.
-          ++epoll_submitted_;
+          epoll_submitted_ = 1;
         }
 
         exec::scope_guard set_not_running{[&]() noexcept {
@@ -192,7 +161,6 @@ namespace sio {
             break_loop_.store(false, std::memory_order_relaxed);
             break;
           }
-          // TODO(xiaoming): timers
           epoll_submitted_ -= acquire_operations_from_epoll();
           SIO_ASSERT(0 <= epoll_submitted_);
           op_queue_.append(requests_.pop_all());
@@ -297,6 +265,7 @@ namespace sio {
       int epoll_fd() const noexcept {
         return epoll_fd_;
       }
+
      private:
       // Execute all op_queue in the queue.
       // Tasks that were enqueued during the execution of already enqueued op won't be executed.
@@ -330,10 +299,10 @@ namespace sio {
         }
 
         operation_queue ops;
+        bool eventfd_event = false;
         for (int i = 0; i < result; ++i) {
           if (events[i].data.ptr == &event_fd_) {
-          } else if (events[i].data.ptr == &timer_fd_) {
-            // TODO(xiaoming)
+            eventfd_event = true;
           } else {
             auto op = reinterpret_cast<operation_base*>(events[i].data.ptr);
             ops.push_back(op);
@@ -341,8 +310,11 @@ namespace sio {
         }
         op_queue_.append(static_cast<operation_queue&&>(ops));
 
-        // The count of eventfd won't be removed until context is stopped.
-        return stop_requested() ? result : result - 1;
+        // The count of eventfd won't be calculated unless context is stopped.
+        if (!stop_requested() && eventfd_event) {
+          --result;
+        }
+        return result;
       }
 
       // This constant is used for submissions_in_flight to indicate that
@@ -475,13 +447,10 @@ namespace sio {
       Base* base_;
 
       static constexpr bool ready(operation_base*) noexcept {
-        return false;
+        return true;
       }
 
       static void execute(operation_base* op) noexcept {
-        // TODO(xiaoming)
-        // auto self = static_cast<stop_operation*>(op);
-        // self->base_->execute_stop();
       }
 
       static void complete(operation_base* op, const std::error_code& ec) noexcept {
@@ -560,9 +529,9 @@ namespace sio {
         void execute() noexcept {
           [[maybe_unused]] int prev = ops_cnt_.fetch_add(1, std::memory_order_relaxed);
           STDEXEC_ASSERT(prev == 0);
-          epoll_context& ctx_ = this->base_.context();
+          epoll_context& ctx = this->base_.context();
           Receiver& rcvr = this->base_.receiver();
-          on_context_stop_.emplace(ctx_.get_stop_token(), stop_callback{this});
+          on_context_stop_.emplace(ctx.get_stop_token(), stop_callback{this});
           on_receiver_stop_.emplace(
             stdexec::get_stop_token(stdexec::get_env(rcvr)), stop_callback{this});
           this->base_.execute();
@@ -700,6 +669,75 @@ namespace sio {
     template <class Operation>
     using socket_operation_facade_t = stdexec::__t<socket_operation_facade<Operation>>;
 
+    template <class ReceiverId>
+    struct schedule_at_operation {
+      using Receiver = stdexec::__t<ReceiverId>;
+
+      struct impl : stoppable_op_base<Receiver> {
+        int timer_fd_{-1};
+        time_point time_{};
+        bool submitted_{false};
+
+        void add_events() noexcept {
+          epoll_event event = {.events = EPOLLIN | EPOLLERR, .data = {.ptr = &timer_fd_}};
+          int ret = ::epoll_ctl(this->ctx_.epoll_fd(), EPOLL_CTL_ADD, timer_fd_, &event);
+          throw_error_code_if(ret < 0, errno);
+        }
+
+        void remove_events() noexcept {
+          epoll_event event = {};
+          int ret = ::epoll_ctl(this->ctx_.epoll_fd(), EPOLL_CTL_DEL, timer_fd_, &event);
+          throw_error_code_if(ret < 0, errno);
+        }
+
+        void set_timer(const time_point& tp) noexcept {
+          auto nsec = std::chrono::duration_cast<std::chrono::nanoseconds>(tp.time_since_epoch());
+          auto sec = std::chrono::duration_cast<std::chrono::seconds>(nsec);
+          nsec -= sec;
+          nsec = std::clamp(
+            nsec, std::chrono::nanoseconds{0}, std::chrono::nanoseconds{999'999'999});
+
+          ::itimerspec timespec = {
+            .it_interval = {          .tv_sec = 0,            .tv_nsec = 0},
+            .it_value = {.tv_sec = sec.count(), .tv_nsec = nsec.count()}
+          };
+
+          int res = ::timerfd_settime(timer_fd_, TFD_TIMER_ABSTIME, &timespec, nullptr);
+          throw_error_code_if(res < 0, errno);
+        }
+
+        void execute() noexcept {
+          if (!submitted_) {
+            set_timer(time_);
+            add_events();
+            this->ctx_.increment_epoll_submitted();
+            submitted_ = true;
+          } else {
+            remove_events();
+            this->ctx_.decrement_epoll_submitted();
+            submitted_ = false;
+            size_t buffer;
+            ::read(timer_fd_, &buffer, sizeof(buffer));
+          }
+        }
+
+        void complete(const std::error_code& ec) noexcept {
+          stdexec::set_value(static_cast<Receiver>(this->receiver_));
+        }
+
+        constexpr bool ready() noexcept {
+          return false;
+        }
+
+        impl(epoll_context& ctx, const time_point& tp, Receiver receiver)
+          : stoppable_op_base<Receiver>{ctx, static_cast<Receiver&&>(receiver)}
+          , timer_fd_(create_timer()) {
+        }
+      };
+
+      using __t = stoppable_operation_facade_t<impl>;
+    };
+
     class scheduler {
      public:
       struct schedule_env {
@@ -754,6 +792,47 @@ namespace sio {
         };
       }; // schedule_sender.
 
+      class schedule_at_sender {
+       public:
+        using is_sender = void;
+        using __id = schedule_at_sender;
+        using __t = schedule_at_sender;
+
+        template <typename Receiver>
+        using op_t = stdexec::__t<schedule_at_operation<stdexec::__id<Receiver>>>;
+
+        schedule_env env_;
+        time_point time_;
+
+       private:
+        STDEXEC_CPO_ACCESS(stdexec::get_env_t);
+        STDEXEC_CPO_ACCESS(stdexec::get_completion_signatures_t);
+        STDEXEC_CPO_ACCESS(stdexec::connect_t);
+
+        STDEXEC_DEFINE_CUSTOM(auto get_env)
+
+        (this const schedule_at_sender& self, stdexec::get_env_t) noexcept -> schedule_env {
+          return self.env_;
+        }
+
+        using completion_sigs =
+          stdexec::completion_signatures< stdexec::set_value_t(), stdexec::set_stopped_t()>;
+
+        template <class Env>
+        STDEXEC_DEFINE_CUSTOM(completion_sigs get_completion_signatures)
+        (this const schedule_at_sender&, stdexec::get_completion_signatures_t, Env) noexcept {
+          return {};
+        }
+
+        template <stdexec::receiver_of<completion_sigs> Receiver>
+        STDEXEC_DEFINE_CUSTOM(auto connect)
+        (this const schedule_at_sender& self, stdexec::connect_t, Receiver&& receiver)
+          -> op_t<Receiver> {
+          return op_t<Receiver>(
+            std::in_place, *self.env_.ctx_, self.time_, static_cast<Receiver&&>(receiver));
+        }
+      };
+
 
      public:
       explicit scheduler(epoll_context& context) noexcept
@@ -769,6 +848,25 @@ namespace sio {
       friend auto tag_invoke(stdexec::schedule_t, const scheduler& sched) noexcept
         -> stdexec::__t<schedule_sender> {
         return stdexec::__t<schedule_sender>{schedule_env{sched.ctx_}};
+      }
+
+      friend auto tag_invoke(exec::now_t, const scheduler& sched) noexcept
+        -> std::chrono::time_point<std::chrono::steady_clock> {
+        return std::chrono::steady_clock::now();
+      }
+
+      friend auto tag_invoke(
+        exec::schedule_at_t,    //
+        const scheduler& sched, //
+        const time_point& time) noexcept -> stdexec::__t<schedule_at_sender> {
+        return {schedule_env{sched.ctx_}, time};
+      }
+
+      friend auto tag_invoke(
+        exec::schedule_after_t, //
+        const scheduler& sched, //
+        std::chrono::nanoseconds duration) noexcept -> stdexec::__t<schedule_at_sender> {
+        return {schedule_env{sched.ctx_}, std::chrono::steady_clock::now() + duration};
       }
 
      private:
