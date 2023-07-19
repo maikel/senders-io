@@ -43,7 +43,7 @@ namespace sio {
       }
     } data_;
 
-    bool emplaced_;
+    bool emplaced_{false};
    public:
     template <class... As>
       requires constructible_from<std::tuple<Args...>, As...>
@@ -52,13 +52,15 @@ namespace sio {
     }
 
     deferred(deferred&& other) noexcept((nothrow_move_constructible<Args> && ...))
-      : data_{static_cast<storage&&>(other.data_)} {
+      : data_{static_cast<storage&&>(other.data_)}
+      , emplaced_{other.emplaced_} {
     }
 
     deferred& operator=(deferred&&) = delete;
 
     deferred(const deferred& other) noexcept((nothrow_copy_constructible<Args> && ...))
-      : data_{other.data_} {
+      : data_{other.data_}
+      , emplaced_{other.emplaced_} {
     }
 
     ~deferred() {
@@ -79,6 +81,23 @@ namespace sio {
           return std::construct_at(&data_.value, static_cast<As&&>(args)...);
         },
         static_cast<std::tuple<Args...>&&>(tup));
+      emplaced_ = true;
+    }
+
+    Tp* get() noexcept {
+      return &data_.value;
+    }
+
+    const Tp* get() const noexcept {
+      return &data_.value;
+    }
+
+    Tp* operator->() noexcept {
+      return &data_.value;
+    }
+
+    const Tp* operator->() const noexcept {
+      return &data_.value;
     }
 
     Tp& operator*() noexcept {
@@ -93,9 +112,9 @@ namespace sio {
   template <class Tp>
   struct make_deferred_t {
     template <class... Args>
-    deferred<Tp, Args...> operator()(Args&&... args) const
+    deferred<Tp, decay_t<Args>...> operator()(Args&&... args) const
       noexcept(nothrow_constructible_from<decayed_tuple<Args...>, Args...>) {
-      return deferred<Tp, Args...>(static_cast<Args&&>(args)...);
+      return deferred<Tp, decay_t<Args>...>(static_cast<Args&&>(args)...);
     }
   };
 

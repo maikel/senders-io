@@ -245,7 +245,7 @@ namespace sio::async {
       stdexec::connect_result_t<open_sender_of_t<Resource>, open_receiver<Token, Receiver>>
         open_op_{};
 
-      operation(Resource& resource, Receiver rcvr)
+      operation(Resource resource, Receiver rcvr)
         : operation_base<Token, Receiver>{static_cast<Receiver&&>(rcvr)}
         , open_op_{stdexec::connect(open(resource), open_receiver<Token, Receiver>{this})} {
       }
@@ -259,7 +259,7 @@ namespace sio::async {
     struct sequence {
       using is_sender = exec::sequence_tag;
 
-      Resource& resource_;
+      Resource resource_;
 
       template <class Receiver>
       auto subscribe(exec::subscribe_t, Receiver rcvr) const
@@ -279,11 +279,13 @@ namespace sio::async {
     extern const use_t use;
 
     template <class Resource>
-    concept has_use_member_cpo = requires(Resource& resource) { resource.use(use); };
+    concept has_use_member_cpo = requires(Resource&& resource) {
+      std::forward<Resource>(resource).use(use);
+    };
 
     template <class Resource>
-    concept has_static_use_member_cpo = requires(Resource& resource) {
-      Resource::use(resource, use);
+    concept has_static_use_member_cpo = requires(Resource&& resource) {
+      Resource::use(std::forward<Resource>(resource), use);
     };
 
     template <class Resource>
@@ -294,7 +296,7 @@ namespace sio::async {
 
     struct use_t {
       template <has_use_member Resource>
-      auto operator()(Resource& resource) const noexcept {
+      auto operator()(Resource&& resource) const noexcept {
         if constexpr (has_use_member_cpo<Resource>) {
           return resource.use(use);
         } else {
@@ -304,7 +306,7 @@ namespace sio::async {
 
       template <no_use_member Resource>
         requires with_open_and_close<Resource>
-      auto operator()(Resource& resource) const noexcept -> sequence<Resource> {
+      auto operator()(const Resource& resource) const noexcept -> sequence<Resource> {
         return {resource};
       }
     };

@@ -210,6 +210,7 @@ namespace sio {
 
     template <class Completions, class Receiver>
     void stop_receiver<Completions, Receiver>::set_value(stdexec::set_value_t) && noexcept {
+      op_->callback_.reset();
       stdexec::set_value(std::move(op_->rcvr_));
     }
 
@@ -249,8 +250,10 @@ namespace sio {
       }
 
      public:
+      handle() = default;
+
       template <class Sequence>
-      auto notify_all(Sequence&& seq) {
+      auto notify_all(Sequence&& seq) const {
         return sio::transform_each(
                  std::forward<Sequence>(seq),
                  [base = base_]<class Item>(Item&& item) {
