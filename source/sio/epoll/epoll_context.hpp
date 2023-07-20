@@ -30,6 +30,7 @@
 #include <cstring>
 #include <optional>
 #include <system_error>
+#include <type_traits>
 #include <utility>
 
 #include "exec/__detail/__atomic_intrusive_queue.hpp"
@@ -91,8 +92,8 @@ namespace sio {
     struct operation_base;
 
     struct operation_vtable {
-      bool (*ready_)(operation_base*) noexcept = nullptr;
-      void (*execute_)(operation_base*) noexcept = nullptr;
+      // return true means operation is done and associated context will complete operation.
+      bool (*execute_)(operation_base*) noexcept = nullptr;
       void (*complete_)(operation_base*, const std::error_code&) noexcept = nullptr;
     };
 
@@ -113,8 +114,8 @@ namespace sio {
       op->vtable_->complete_(op, std::error_code{});
     }
 
-    inline void execute_this_operation(operation_base* op) noexcept {
-      op->vtable_->execute_(op);
+    inline bool execute_this_operation(operation_base* op) noexcept {
+      return op->vtable_->execute_(op);
     }
 
     using operation_queue = stdexec::__intrusive_queue<&operation_base::next_>;
@@ -266,8 +267,8 @@ namespace sio {
       }
 
      private:
-      // Execute all op_queue in the queue.
-      // Tasks that were enqueued during the execution of already enqueued op won't be executed.
+      // Execute all operations in the queue. Return the count of completed operations.
+      // Operations that were enqueued during the execution of already enqueued op won't be executed.
       // This bounds the amount of work to a finite amount.
       size_t execute_operations() noexcept {
         if (op_queue_.empty()) {
@@ -276,13 +277,12 @@ namespace sio {
         size_t count = 0;
         auto op_queue = static_cast<operation_queue&&>(op_queue_);
         while (!op_queue.empty()) {
-          auto* op = op_queue.pop_front();
+          operation_base* op = op_queue.pop_front();
           std::exchange(op->next_, nullptr);
-          if (!op->vtable_->ready_(op)) {
-            execute_this_operation(op);
+          if (execute_this_operation(op)) {
+            complete_this_operation(op);
+            ++count;
           }
-          complete_this_operation(op);
-          ++count;
         }
         return count;
       }
@@ -298,10 +298,10 @@ namespace sio {
         }
 
         operation_queue ops;
-        bool eventfd_event = false;
+        int eventfd_event = 0;
         for (int i = 0; i < result; ++i) {
           if (events[i].data.ptr == &event_fd_) {
-            eventfd_event = true;
+            ++eventfd_event;
           } else {
             auto op = reinterpret_cast<operation_base*>(events[i].data.ptr);
             ops.push_back(op);
@@ -311,7 +311,7 @@ namespace sio {
 
         // The count of eventfd won't be calculated unless context is stopped.
         if (!stop_requested() && eventfd_event) {
-          --result;
+          result -= eventfd_event;
         }
         return result;
       }
@@ -332,8 +332,7 @@ namespace sio {
     template <class Operation>
     concept io_operation = requires(Operation& op, const std::error_code& ec) {
                              { op.context() } noexcept -> std::convertible_to<epoll_context&>;
-                             { op.ready() } noexcept -> std::convertible_to<bool>;
-                             { op.execute() } noexcept;
+                             { op.execute() } noexcept -> std::convertible_to<bool>;
                              { op.complete(ec) } noexcept;
                            };
 
@@ -352,14 +351,9 @@ namespace sio {
 
     template <io_operation Base>
     struct io_operation_facade : operation_base {
-      static bool ready(operation_base* op) noexcept {
+      static bool execute(operation_base* op) noexcept {
         auto self = static_cast<io_operation_facade*>(op);
-        return self->base_.ready();
-      }
-
-      static void execute(operation_base* op) noexcept {
-        auto self = static_cast<io_operation_facade*>(op);
-        self->base_.execute();
+        return self->base_.execute();
       }
 
       static void complete(operation_base* op, const std::error_code& ec) noexcept {
@@ -367,14 +361,14 @@ namespace sio {
         self->base_.complete(ec);
       }
 
-      static constexpr operation_vtable vtable{&ready, &execute, &complete};
+      static constexpr operation_vtable vtable{&execute, &complete};
 
       template <class... Args>
-        requires stdexec::constructible_from<Base, std::in_place_t, Args...>
+        requires stdexec::constructible_from<Base, std::in_place_t, operation_base*, Args...>
       explicit io_operation_facade(std::in_place_t, Args&&... args) noexcept(
-        stdexec::__nothrow_constructible_from<Base, Args...>)
+        stdexec::__nothrow_constructible_from<Base, operation_base*, Args...>)
         : operation_base{vtable}
-        , base_(std::in_place, static_cast<Args&&>(args)...) {
+        , base_(std::in_place, static_cast<operation_base*>(this), static_cast<Args&&>(args)...) {
       }
 
       template <class... Args>
@@ -419,11 +413,8 @@ namespace sio {
           return ctx_;
         }
 
-        static constexpr std::true_type ready() noexcept {
+        static constexpr std::true_type execute() noexcept {
           return {};
-        }
-
-        static constexpr void execute() noexcept {
         }
 
         void complete(const std::error_code& ec) noexcept {
@@ -445,11 +436,8 @@ namespace sio {
     struct stop_operation : operation_base {
       Base* base_;
 
-      static constexpr bool ready(operation_base*) noexcept {
+      static constexpr bool execute(operation_base* op) noexcept {
         return true;
-      }
-
-      static void execute(operation_base* op) noexcept {
       }
 
       static void complete(operation_base* op, const std::error_code& ec) noexcept {
@@ -461,7 +449,7 @@ namespace sio {
         }
       }
 
-      static constexpr operation_vtable vtable{&ready, &execute, &complete};
+      static constexpr operation_vtable vtable{&execute, &complete};
 
       explicit stop_operation(Base* base) noexcept
         : operation_base(vtable)
@@ -500,12 +488,23 @@ namespace sio {
         std::atomic<int> ops_cnt_{0};
         stop_operation<impl> stop_operation_;
         Base base_;
+        operation_base* parent_;
 
         template <class... Args>
           requires stdexec::constructible_from<Base, Args...>
-        explicit impl(std::in_place_t, Args&&... args) noexcept(
+        explicit impl(std::in_place_t, operation_base* parent, Args&&... args) noexcept(
           stdexec::__nothrow_constructible_from<Base, Args...>)
           : base_(static_cast<Args&&>(args)...)
+          , parent_(parent)
+          , stop_operation_{this} {
+        }
+
+        template <class... Args>
+          requires stdexec::constructible_from<Base, std::in_place_t, operation_base*, Args...>
+        explicit impl(std::in_place_t, operation_base* parent, Args&&... args) noexcept(
+          stdexec::__nothrow_constructible_from<Base, operation_base*, Args...>)
+          : base_(std::in_place, parent, static_cast<Args&&>(args)...)
+          , parent_(parent)
           , stop_operation_{this} {
         }
 
@@ -521,19 +520,17 @@ namespace sio {
           return static_cast<Receiver&&>(base_.receiver());
         }
 
-        bool ready() noexcept {
-          return base_.ready();
-        }
-
-        void execute() noexcept {
-          [[maybe_unused]] int prev = ops_cnt_.fetch_add(1, std::memory_order_relaxed);
-          STDEXEC_ASSERT(prev == 0);
-          epoll_context& ctx = this->base_.context();
-          Receiver& rcvr = this->base_.receiver();
-          on_context_stop_.emplace(ctx.get_stop_token(), stop_callback{this});
-          on_receiver_stop_.emplace(
-            stdexec::get_stop_token(stdexec::get_env(rcvr)), stop_callback{this});
-          this->base_.execute();
+        // Note: execute this operation multiply times is allowed.
+        bool execute() noexcept {
+          int prev = 0;
+          if (ops_cnt_.compare_exchange_strong(prev, 1)) {
+            epoll_context& ctx = this->base_.context();
+            Receiver& rcvr = this->base_.receiver();
+            on_context_stop_.emplace(ctx.get_stop_token(), stop_callback{this});
+            on_receiver_stop_.emplace(
+              stdexec::get_stop_token(stdexec::get_env(rcvr)), stop_callback{this});
+          }
+          return this->base_.execute();
         }
 
         void complete(const std::error_code& ec) noexcept {
@@ -585,6 +582,7 @@ namespace sio {
       op_connect = 2
     };
 
+
     template <class Operation>
     concept socket_operation = stoppable_operation<Operation>
                             && requires(Operation& op) {
@@ -601,9 +599,10 @@ namespace sio {
       struct impl {
         Base base_;
         bool submitted_;
+        operation_base* root_;
 
         void add_events() noexcept {
-          epoll_event event{.data = {.ptr = this}};
+          epoll_event event{.data = {.ptr = root_}};
           if constexpr (
             Base::type() == socket_op_type::op_read || Base::type() == socket_op_type::op_accept) {
             event.events = EPOLLIN | EPOLLERR | EPOLLHUP | EPOLLPRI | EPOLLET;
@@ -633,20 +632,18 @@ namespace sio {
           return static_cast<Receiver&&>(base_.receiver());
         }
 
-        constexpr bool ready() noexcept {
-          return base_.ready();
-        }
-
-        void execute() noexcept {
+        bool execute() noexcept {
           if (!submitted_) {
             add_events();
             base_.context().increment_epoll_submitted();
             submitted_ = true;
+            return false;
           } else {
             remove_events();
             base_.context().decrement_epoll_submitted();
             submitted_ = false;
             base_.execute();
+            return true;
           }
         }
 
@@ -656,9 +653,11 @@ namespace sio {
 
         template <class... Args>
           requires stdexec::constructible_from<Base, Args...>
-        explicit impl(Args&&... args) noexcept(stdexec::__nothrow_constructible_from<Base, Args...>)
+        explicit impl(std::in_place_t, operation_base* root, Args&&... args) noexcept(
+          stdexec::__nothrow_constructible_from<Base, Args...>)
           : base_(static_cast<Args&&>(args)...)
-          , submitted_{0} {
+          , submitted_{0}
+          , root_(root) {
         }
       };
 
@@ -676,9 +675,10 @@ namespace sio {
         int timer_fd_{-1};
         time_point time_{};
         bool submitted_{false};
+        operation_base* root_{nullptr};
 
         void add_events() noexcept {
-          epoll_event event = {.events = EPOLLIN | EPOLLERR, .data = {.ptr = &timer_fd_}};
+          epoll_event event = {.events = EPOLLIN | EPOLLERR, .data = {.ptr = root_}};
           int ret = ::epoll_ctl(this->ctx_.epoll_fd(), EPOLL_CTL_ADD, timer_fd_, &event);
           throw_error_code_if(ret < 0, errno);
         }
@@ -705,18 +705,20 @@ namespace sio {
           throw_error_code_if(res < 0, errno);
         }
 
-        void execute() noexcept {
+        bool execute() noexcept {
           if (!submitted_) {
             set_timer(time_);
             add_events();
             this->ctx_.increment_epoll_submitted();
             submitted_ = true;
+            return false;
           } else {
             remove_events();
             this->ctx_.decrement_epoll_submitted();
             submitted_ = false;
             size_t buffer;
             ::read(timer_fd_, &buffer, sizeof(buffer));
+            return true;
           }
         }
 
@@ -724,13 +726,16 @@ namespace sio {
           stdexec::set_value(static_cast<Receiver>(this->receiver_));
         }
 
-        constexpr bool ready() noexcept {
-          return false;
-        }
-
-        impl(epoll_context& ctx, const time_point& tp, Receiver receiver)
+        explicit impl(
+          std::in_place_t,
+          operation_base* root,
+          epoll_context& ctx,
+          const time_point& tp,
+          Receiver receiver) noexcept
           : stoppable_op_base<Receiver>{ctx, static_cast<Receiver&&>(receiver)}
-          , timer_fd_(create_timer()) {
+          , time_(tp)
+          , timer_fd_(create_timer())
+          , root_(root) {
         }
       };
 
