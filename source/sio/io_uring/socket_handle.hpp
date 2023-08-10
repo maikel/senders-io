@@ -150,6 +150,42 @@ namespace sio::io_uring {
     };
   }
 
+template <class Receiver>
+  struct sendmsg_operation_base : stoppable_op_base<Receiver> {
+    int fd_;
+    ::msghdr msg_;
+
+    sendmsg_operation_base(Receiver rcvr, exec::io_uring_context* context, int fd, ::msghdr msg)
+      : stoppable_op_base<Receiver>{*context, static_cast<Receiver&&>(rcvr)}
+      , fd_{fd}
+      , msg_{msg} {
+    }
+
+    static std::false_type ready() noexcept {
+      return {};
+    }
+
+    void submit(::io_uring_sqe& sqe) noexcept {
+      ::io_uring_sqe sqe_{};
+      sqe_.opcode = IORING_OP_SENDMSG;
+      sqe_.fd = fd_;
+      sqe_.addr = std::bit_cast<__u64>(&msg_);
+      sqe = sqe_;
+    }
+
+    void complete(const ::io_uring_cqe& cqe) noexcept {
+      if (cqe.res >= 0) {
+        stdexec::set_value(static_cast<sendmsg_operation_base&&>(*this).receiver(), cqe.res);
+      } else {
+        stdexec::set_error(
+          static_cast<sendmsg_operation_base&&>(*this).receiver(),
+          std::error_code(-cqe.res, std::system_category()));
+      }
+    }
+  };
+
+  template <class Receiver>
+  using sendmsg_operation = stoppable_task_facade<sendmsg_operation_base<Receiver>>;
 
   struct sendmsg_sender {
     using is_sender = void;
@@ -157,6 +193,13 @@ namespace sio::io_uring {
       stdexec::set_value_t(std::size_t),
       stdexec::set_error_t(std::error_code),
       stdexec::set_stopped_t()>;
+
+    template <class Receiver>
+    sendmsg_operation<Receiver> connect(stdexec::connect_t, Receiver rcvr) const
+      noexcept(nothrow_move_constructible<Receiver>) {
+      return sendmsg_operation<Receiver>{std::in_place, 
+        static_cast<Receiver&&>(rcvr), context_, fd_, msg_};
+    }
 
     exec::io_uring_context* context_;
     int fd_;
