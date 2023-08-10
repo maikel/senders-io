@@ -252,6 +252,11 @@ namespace sio {
 
     template <class Sequence>
     struct sender {
+      struct type;
+    };
+
+    template <class Sequence>
+    struct sender<Sequence>::type {
       using is_sender = void;
 
       template <class Self, class Receiver>
@@ -269,7 +274,7 @@ namespace sio {
 
       [[no_unique_address]] Sequence sequence_;
 
-      template <decays_to<sender> Self, stdexec::receiver Receiver>
+      template <decays_to<type> Self, stdexec::receiver Receiver>
         requires stdexec::receiver_of<Receiver, completion_sigs<Self, env_of_t<Receiver>>>
               && exec::sequence_sender_to<
                    copy_cvref_t<Self, Sequence>,
@@ -287,7 +292,7 @@ namespace sio {
     struct ignore_all_t {
       template <stdexec::sender Sender>
       auto operator()(Sender&& seq) const noexcept(nothrow_decay_copyable<Sender>)
-        -> sender<decay_t<Sender>> {
+        -> typename sender<decay_t<Sender>>::type {
         return {static_cast<Sender&&>(seq)};
       }
 
