@@ -73,15 +73,16 @@ namespace sio {
 
     deferred& operator=(const deferred&) = delete;
 
-    void operator()() noexcept(nothrow_constructible_from<Tp, Args...>) {
+    Tp& operator()() noexcept(nothrow_constructible_from<Tp, Args...>) {
       std::tuple<Args...> tup = static_cast<std::tuple<Args...>&&>(data_.args);
       std::destroy_at(&data_.args);
-      std::apply(
+      Tp* ptr = std::apply(
         [this]<class... As>(As&&... args) {
           return std::construct_at(&data_.value, static_cast<As&&>(args)...);
         },
         static_cast<std::tuple<Args...>&&>(tup));
       emplaced_ = true;
+      return *ptr;
     }
 
     Tp* get() noexcept {

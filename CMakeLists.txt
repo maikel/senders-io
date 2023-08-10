@@ -61,6 +61,7 @@ target_sources(sio PUBLIC
     source/sio/async_resource.hpp
     source/sio/concepts.hpp
     source/sio/deferred.hpp
+    source/sio/finally.hpp
     source/sio/intrusive_list.hpp
     source/sio/intrusive_queue.hpp
     source/sio/io_concepts.hpp
