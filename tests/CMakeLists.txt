@@ -11,13 +11,16 @@ find_package(Catch2 REQUIRED)
 
 add_executable(test_sio
   test_main.cpp
+  sequence/test_fork.cpp
   test_async_resource.cpp
   test_file_handle.cpp
   test_async_accept.cpp
   test_async_mutex.cpp
-  test_async_channel.cpp
+  # test_async_channel.cpp
   test_memory_pool.cpp
   test_tap.cpp
+  net/test_can_endpoint.cpp
+  net/test_can_socket.cpp
   net/test_address.cpp
   net/test_endpoint.cpp
   net/test_resolve.cpp

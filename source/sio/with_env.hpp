@@ -36,7 +36,7 @@ namespace sio {
       operation_base<Env, Receiver>* op_;
 
       auto get_env(stdexec::get_env_t) const noexcept {
-        return stdexec::__env::__join_env(op_->env, stdexec::get_env(op_->receiver));
+        return stdexec::__join_env(op_->env, stdexec::get_env(op_->receiver));
       }
 
       template <class... Args>

@@ -150,7 +150,7 @@ namespace sio::io_uring {
     };
   }
 
-template <class Receiver>
+  template <class Receiver>
   struct sendmsg_operation_base : stoppable_op_base<Receiver> {
     int fd_;
     ::msghdr msg_;
@@ -197,15 +197,14 @@ template <class Receiver>
     template <class Receiver>
     sendmsg_operation<Receiver> connect(stdexec::connect_t, Receiver rcvr) const
       noexcept(nothrow_move_constructible<Receiver>) {
-      return sendmsg_operation<Receiver>{std::in_place, 
-        static_cast<Receiver&&>(rcvr), context_, fd_, msg_};
+      return sendmsg_operation<Receiver>{
+        std::in_place, static_cast<Receiver&&>(rcvr), context_, fd_, msg_};
     }
 
     exec::io_uring_context* context_;
     int fd_;
     ::msghdr msg_;
   };
-
 
   template <class Protocol>
   struct socket_handle : byte_stream {
@@ -226,6 +225,17 @@ template <class Receiver>
 
     sendmsg_sender sendmsg(async::sendmsg_t, ::msghdr msg) const noexcept {
       return {this->context_, fd_, msg};
+    }
+
+    void bind(endpoint local_endpoint) const {
+      if (::bind(fd_, (sockaddr*) local_endpoint.data(), local_endpoint.size()) == -1) {
+        throw std::system_error(errno, std::system_category());
+      }
+    }
+
+    template <class T>
+    auto write(std::span<T> data) const noexcept {
+      return byte_stream::write(async::write, std::as_bytes(data));
     }
 
     endpoint local_endpoint() const;
@@ -393,7 +403,7 @@ template <class Receiver>
       , local_endpoint_(ep) {
     }
 
-    void throw_on_error(int rc) {
+    static void throw_on_error(int rc) {
       std::error_code ec{rc, std::system_category()};
       if (ec) {
         throw std::system_error(ec);
@@ -403,7 +413,7 @@ template <class Receiver>
     auto open(async::open_t) noexcept {
       return stdexec::then(
         socket<Protocol>{context_, protocol_}.open(async::open),
-        [this](socket_handle<Protocol> handle) {
+        [*this](socket_handle<Protocol> handle) {
           int one = 1;
           throw_on_error(::setsockopt(
             handle.fd_, SOL_SOCKET, SO_REUSEADDR, &one, static_cast<socklen_t>(sizeof(int))));
@@ -415,7 +425,6 @@ template <class Receiver>
   };
 
   template <class Protocol>
-  acceptor(exec::io_uring_context&, Protocol, typename Protocol::endpoint)
-    -> acceptor<Protocol>;
+  acceptor(exec::io_uring_context&, Protocol, typename Protocol::endpoint) -> acceptor<Protocol>;
 
 }

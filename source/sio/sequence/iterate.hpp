@@ -146,8 +146,7 @@ namespace sio {
         requires sender_to<
           exec::__next_sender_of_t<Receiver, sender_t<Range>>,
           next_receiver<Range, Receiver>>
-      static operation<Range, Receiver>
-        subscribe(Self&& self, exec::subscribe_t, Receiver rcvr) //
+      static operation<Range, Receiver> subscribe(Self&& self, exec::subscribe_t, Receiver rcvr) //
         noexcept(nothrow_decay_copyable<Receiver>) {
         return {
           {std::ranges::begin(self.range_), std::ranges::end(self.range_)},

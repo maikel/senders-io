@@ -64,15 +64,16 @@ TEST_CASE("async_accept should work", "[async_accept]") {
 
   exec::io_uring_context ctx;
 
+  io_uring::acceptor acceptor(&ctx, ip::tcp::v4(), ip::endpoint{ip::address_v4::any(), 1080});
   stdexec::sender auto accept = sio::async::use_resources(
-    [](auto acceptor) { return ignore_all(sio::async::accept(acceptor)); },
-    io_uring::acceptor(&ctx, ip::tcp::v4(), ip::endpoint{ip::address_v4::any(), 1080}));
+    [](auto acceptor) { return ignore_all(sio::async::accept(acceptor)); }, acceptor);
 
+  sio::io_uring::socket sock(&ctx, ip::tcp::v4());
   stdexec::sender auto connect = async::use_resources(
     [](auto client) {
       return sio::async::connect(client, ip::endpoint{ip::address_v4::loopback(), 1080});
     },
-    sio::io_uring::socket(&ctx, ip::tcp::v4()));
+    sock);
 
   ::sync_wait(ctx, exec::when_any(accept, connect));
 }

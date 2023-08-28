@@ -20,6 +20,9 @@
 #include "./sequence/sequence_concepts.hpp"
 #include "./concepts.hpp"
 
+#include "./sequence/fork.hpp"
+#include "./sequence/repeat.hpp"
+
 namespace sio {
   template <class IP>
   concept internet_protocol = requires(const IP& proto) {
@@ -350,7 +353,7 @@ namespace sio::async {
       allocator_of_t<Receiver>>::template rebind_alloc<client_operation<Acceptor, Receiver>>;
 
     template <class Acceptor, class Receiver>
-    using deallocate_sender_t = decltype(async::destroy_and_deallocate(
+    using delete_sender_t = decltype(async::async_delete(
       std::declval<allocator_t<Acceptor, Receiver>>(),
       (client_operation<Acceptor, Receiver>*) nullptr));
 
@@ -364,10 +367,9 @@ namespace sio::async {
         next_accept_sender_of_t<Acceptor, Receiver>,
         next_receiver<Acceptor, Receiver>>
         next_op_;
-      stdexec::connect_result_t<
-        deallocate_sender_t<Acceptor, Receiver>,
-        delete_receiver<Acceptor, Receiver>>
-        delete_op_;
+      stdexec::
+        connect_result_t< delete_sender_t<Acceptor, Receiver>, delete_receiver<Acceptor, Receiver>>
+          delete_op_;
     };
 
     template <class Acceptor, class Receiver>
@@ -414,8 +416,8 @@ namespace sio::async {
       void deallocate(client_operation<Acceptor, Receiver>* op) noexcept {
         SIO_ASSERT(op != nullptr);
         std::construct_at(&op->delete_op_, stdexec::__conv{[&] {
-            return stdexec::connect(
-            sio::async::destroy_and_deallocate(get_allocator(), op),
+          return stdexec::connect(
+            sio::async::async_delete(get_allocator(), op),
             delete_receiver<Acceptor, Receiver>{this});
         }});
         stdexec::start(op->delete_op_);
@@ -448,7 +450,9 @@ namespace sio::async {
         return stdexec::get_env(op_->rcvr_);
       }
 
-      void set_value(stdexec::set_value_t, client_operation<Acceptor, Receiver>* client_op) && noexcept {
+      void set_value(
+        stdexec::set_value_t,
+        client_operation<Acceptor, Receiver>* client_op) && noexcept {
         try {
           if (op_->stop_source_.stop_requested()) {
             op_->deallocate(client_op);
@@ -550,7 +554,8 @@ namespace sio::async {
           return decay_t<Tp>::accept(
             static_cast<Tp&&>(t), accept_t{}, static_cast<Args&&>(args)...);
         } else {
-          return sequence<decay_t<Tp>>{static_cast<Tp&&>(t)};
+          return repeat(accept_once(static_cast<Tp&&>(t))) | fork();
+          // return sequence<decay_t<Tp>>{static_cast<Tp&&>(t)};
         }
       }
     };
