@@ -295,14 +295,14 @@ namespace sio {
                       | stdexec::then(
                           [](item_operation<just_t, SeqRcvr, ErrorsVariant>* op) noexcept {
                             stdexec::start(*op);
-                          })
-                      | stdexec::upon_stopped([op]() noexcept {
-                          op->request_stop();
-                          op->decrease_ref();
-                        });
+                          });
                })
              | stdexec::upon_error([op = sequence_op_](auto eptr) noexcept {
                  op->set_error(std::move(eptr));
+                 op->request_stop();
+                 op->decrease_ref();
+               })
+             | stdexec::upon_stopped([op = sequence_op_]() noexcept {
                  op->request_stop();
                  op->decrease_ref();
                });
@@ -406,7 +406,7 @@ namespace sio {
       return {std::move(seq)};
     }
 
-    stdexec::__binder_back<fork_t> operator()() const noexcept {
+    binder_back<fork_t> operator()() const noexcept {
       return {{}, {}, {}};
     }
   };

@@ -25,7 +25,7 @@ add_executable(test_sio
   sequence/test_zip.cpp
   test_async_resource.cpp
   test_file_handle.cpp
-  # test_async_accept.cpp
+  test_async_accept.cpp
   test_async_mutex.cpp
   test_async_channel.cpp
   test_memory_pool.cpp
