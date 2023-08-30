@@ -176,7 +176,7 @@ namespace sio {
     std::unique_lock lock(pool_->mutex_);
     void* block_ptr = pool_->block_lists_[index_];
     void* buffer = block_ptr;
-    if (!buffer)
+    if (!buffer) {
       try {
         buffer = pool_->upstream_->allocate(1 << (index_ + 1));
       } catch (std::bad_alloc&) {
@@ -185,6 +185,7 @@ namespace sio {
           stdexec::get_stop_token(stdexec::get_env(receiver_)), on_receiver_stop{this});
         return;
       }
+    }
     if (block_ptr) {
       void* next = nullptr;
       std::memcpy(&next, buffer, sizeof(void*));

@@ -29,7 +29,7 @@ TEST_CASE("can - Create socket and bind it", "[can]") {
                       frame.len = 1;
                       frame.data[0] = 0x42;
                       std::span buffer{&frame, 1};
-                      return sock.write(buffer);
+                      return async::write(sock, std::as_bytes(buffer));
                     })
                   | ignore_all();
   stdexec::sync_wait(exec::when_any(use_socket, ioc.run()));

@@ -68,9 +68,7 @@ namespace sio {
         : operation_base<
           Receiver,
           Adaptor>{static_cast<Receiver&&>(rcvr), static_cast<Adaptor&&>(adaptor)}
-        , op_{exec::subscribe(
-            static_cast<Sender&&>(sndr),
-            receiver<Receiver, Adaptor>{this})} {
+        , op_{exec::subscribe(static_cast<Sender&&>(sndr), receiver<Receiver, Adaptor>{this})} {
       }
 
       void start(start_t) noexcept {
@@ -93,7 +91,7 @@ namespace sio {
 
       template <class Self, class Env>
       using completion_sigs_t =
-        completion_signatures_of_t<call_result_t<Adaptor&, some_sender<Self, Sender>>, Env>;
+        completion_signatures_of_t<call_result_t<Adaptor&, some_sender<Self, Env>>, Env>;
 
       template <decays_to<sender> Self, stdexec::receiver Receiver>
         requires exec::sequence_receiver_of<Receiver, completion_sigs_t<Self, env_of_t<Receiver>>>
@@ -117,10 +115,9 @@ namespace sio {
 
     struct transform_each_t {
       template <exec::sequence_sender Sender, class Adaptor>
-      auto operator()(Sender&& sndr, Adaptor&& adaptor) const
-        noexcept(nothrow_decay_copyable<Sender> //
-                   && nothrow_decay_copyable<Adaptor>)
-          -> sender<decay_t<Sender>, decay_t<Adaptor>> {
+      auto operator()(Sender&& sndr, Adaptor&& adaptor) const noexcept(
+        nothrow_decay_copyable<Sender> //
+        && nothrow_decay_copyable<Adaptor>) -> sender<decay_t<Sender>, decay_t<Adaptor>> {
         return {static_cast<Sender&&>(sndr), static_cast<Adaptor&&>(adaptor)};
       }
 

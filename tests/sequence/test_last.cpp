@@ -35,12 +35,11 @@ TEST_CASE("last - with just sender and back binder", "[sequence][last]") {
 TEST_CASE("last - with iterate", "[sequence][last][iterate]") {
   std::array<int, 3> arr{1, 2, 3};
   auto last = sio::last(sio::iterate(arr));
-  stdexec::__debug_sender(last);
-  // auto [x] = stdexec::sync_wait(last).value();
-  // REQUIRE(x == 3);
+  auto [x] = stdexec::sync_wait(last).value();
+  REQUIRE(x == 3);
 }
 
 // TEST_CASE("last - with empty_sequence", "[sequence][last]") {
-  // auto last = sio::last(sio::empty_sequence());
-  // REQUIRE_FALSE(stdexec::sync_wait(last));
+// auto last = sio::last(sio::empty_sequence());
+// REQUIRE_FALSE(stdexec::sync_wait(last));
 // }

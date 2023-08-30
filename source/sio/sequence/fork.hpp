@@ -282,7 +282,7 @@ namespace sio {
       template <class Item>
       auto set_next(exec::set_next_t, Item&& item) {
         return stdexec::just(std::forward<Item>(item))
-             | stdexec::let_value([op = sequence_op_](auto& item) {
+             | stdexec::let_value([op = sequence_op_](std::decay_t<Item>& item) {
                  return if_then_else(op->increase_ref(), std::move(item), stdexec::just_stopped());
                })
              | stdexec::let_value([op = sequence_op_]<class... Vals>(Vals&&... values) noexcept {

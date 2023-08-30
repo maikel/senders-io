@@ -233,11 +233,6 @@ namespace sio::io_uring {
       }
     }
 
-    template <class T>
-    auto write(std::span<T> data) const noexcept {
-      return byte_stream::write(async::write, std::as_bytes(data));
-    }
-
     endpoint local_endpoint() const;
     endpoint remote_endpoint() const;
   };

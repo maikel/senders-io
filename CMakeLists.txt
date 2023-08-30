@@ -40,12 +40,14 @@ target_sources(sio PUBLIC
     source/sio/sequence/any_sequence_of.hpp
     source/sio/sequence/empty_sequence.hpp
     source/sio/sequence/first.hpp
+    source/sio/sequence/fork.hpp
     source/sio/sequence/ignore_all.hpp
     source/sio/sequence/iterate.hpp
     source/sio/sequence/last.hpp
     source/sio/sequence/let_value_each.hpp
     source/sio/sequence/merge_each.hpp
     source/sio/sequence/reduce.hpp
+    source/sio/sequence/repeat.hpp
     source/sio/sequence/scan.hpp
     source/sio/sequence/sequence_concepts.hpp
     source/sio/sequence/then_each.hpp
@@ -72,16 +74,6 @@ target_sources(sio PUBLIC
 target_link_libraries(sio PUBLIC STDEXEC::stdexec)
 target_compile_features(sio PUBLIC cxx_std_20)
 
-if (PROJECT_IS_TOP_LEVEL)
-  option(SIO_EXAMPLES "Build examples" ON)
-else()
-  option(SIO_EXAMPLES "Build examples" OFF)
-endif()
-
-if (SIO_EXAMPLES)
-  add_subdirectory(examples)
-endif()
-
 option(BUILD_TESTING "Build tests" ON)
 if (BUILD_TESTING)
   add_subdirectory(tests)
@@ -105,4 +97,15 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/sio")
 
   include(CPack)
+endif()
+
+
+if (PROJECT_IS_TOP_LEVEL)
+  option(SIO_EXAMPLES "Build examples" ON)
+else()
+  option(SIO_EXAMPLES "Build examples" OFF)
+endif()
+
+if (SIO_EXAMPLES)
+  add_subdirectory(examples)
 endif()

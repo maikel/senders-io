@@ -20,8 +20,8 @@ jobs:
     steps:
     - uses: actions/checkout@v3
       with:
-        repository: maikel/stdexec
-        ref: maikel/member_cpo
+        repository: villevoutilainen/wg21_p2300_std_execution
+        ref: member-only-customization-points
         path: stdexec
 
     - name: Configure stdexec
