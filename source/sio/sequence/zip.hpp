@@ -389,8 +389,8 @@ namespace sio {
       operation_base<Receiver, ResultTuple, ErrorsVariant>* op_;
 
       template <class Item>
-      auto set_next(exec::set_next_t, Item&& item) noexcept(nothrow_decay_copyable<Item>)
-        -> typename item_sender<Index, decay_t<Item>, Receiver, ResultTuple, ErrorsVariant>::type {
+      auto set_next(exec::set_next_t, Item&& item) noexcept(nothrow_decay_copyable<Item>) ->
+        typename item_sender<Index, decay_t<Item>, Receiver, ResultTuple, ErrorsVariant>::type {
         return {static_cast<Item&&>(item), op_};
       }
 
@@ -456,15 +456,11 @@ namespace sio {
     template <class Sender, class Env>
     concept max1_sender =
       sender_in<Sender, Env>
-      && __valid<__value_types_of_t, Sender, Env, __mconst<int>, __msingle_or<void>>;
+      && __mvalid<__value_types_of_t, Sender, Env, __mconst<int>, __msingle_or<void>>;
 
     template <class Env, class Sender>
     using single_values_of_t = //
-      __value_types_of_t<
-        Sender,
-        Env,
-        __transform<__q<decay_t>, __q<__types>>,
-        __q<__msingle>>;
+      __value_types_of_t< Sender, Env, __transform<__q<decay_t>, __q<__types>>, __q<__msingle>>;
 
     template <class Env>
     using env_t = decltype(exec::make_env(
@@ -548,8 +544,7 @@ namespace sio {
       void start(stdexec::start_t) noexcept {
         this->stop_callback_.emplace(
           stdexec::get_stop_token(stdexec::get_env(this->receiver_)),
-          on_stop_requested{this->stop_source_}
-        );
+          on_stop_requested{this->stop_source_});
         std::apply([](auto&... ops) { (stdexec::start(ops), ...); }, op_states_);
       }
     };

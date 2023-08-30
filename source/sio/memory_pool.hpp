@@ -30,6 +30,7 @@
 #include "./intrusive_list.hpp"
 
 #include <stdexec/execution.hpp>
+#include <exec/finally.hpp>
 
 namespace sio {
   class memory_pool;
@@ -175,7 +176,7 @@ namespace sio {
     std::unique_lock lock(pool_->mutex_);
     void* block_ptr = pool_->block_lists_[index_];
     void* buffer = block_ptr;
-    if (!buffer)
+    if (!buffer) {
       try {
         buffer = pool_->upstream_->allocate(1 << (index_ + 1));
       } catch (std::bad_alloc&) {
@@ -184,6 +185,7 @@ namespace sio {
           stdexec::get_stop_token(stdexec::get_env(receiver_)), on_receiver_stop{this});
         return;
       }
+    }
     if (block_ptr) {
       void* next = nullptr;
       std::memcpy(&next, buffer, sizeof(void*));
@@ -207,13 +209,33 @@ namespace sio {
   struct memory_pool_allocator {
     memory_pool* pool_;
 
-    auto allocate(async::allocate_t, std::size_t size) const {
-      return stdexec::then(pool_->allocate(size, alignof(T)), [](void* ptr) noexcept {
-        return static_cast<T*>(ptr);
-      });
+    template <class... Args>
+    auto async_new(async::async_new_t, Args&&... args) const {
+      return stdexec::let_value(
+        pool_->allocate(sizeof(T), alignof(T)),
+        [... args = static_cast<Args&&>(args), this](void* ptr) mutable {
+          return stdexec::let_error(
+            stdexec::then(
+              stdexec::just(),
+              [... args = std::move(args), ptr]() mutable {
+                return new (ptr) T(std::move(args)...);
+              }),
+            [ptr, this](std::exception_ptr e) {
+              return stdexec::let_value(pool_->deallocate(ptr), [e = std::move(e)] {
+                return stdexec::just_error(e);
+              });
+            });
+        });
     }
 
-    auto deallocate(async::deallocate_t, T* ptr) const noexcept {
+    auto async_new_array(async::async_new_array_t, std::size_t size) const {
+      return stdexec::then(
+        pool_->allocate(sizeof(T) * size, alignof(T)),
+        [size](void* ptr) noexcept { return new (ptr) T[size]; });
+    }
+
+    auto async_delete(async::async_delete_t, T* ptr) const noexcept {
+      std::destroy_at(ptr);
       return pool_->deallocate(ptr);
     }
   };

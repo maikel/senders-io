@@ -44,64 +44,97 @@ namespace sio::async {
 
   inline constexpr allocate_t allocate{};
 
-  struct deallocate_t;
-  extern const deallocate_t deallocate;
+  struct async_new_t;
+  extern const async_new_t async_new;
 
-  namespace deallocate_ {
+  namespace async_new_ {
     template <class Alloc, class... Args>
     concept has_member_cust = requires(Alloc alloc, Args&&... args) {
-      { alloc.deallocate(deallocate, static_cast<Args&&>(args)...) };
+      { alloc.async_new(async_new, static_cast<Args&&>(args)...) };
     };
 
     template <class Alloc, class... Args>
     concept nothrow_member_cust = requires(Alloc alloc, Args&&... args) {
-      { alloc.deallocate(deallocate, static_cast<Args&&>(args)...) } noexcept;
+      { alloc.async_new(async_new, static_cast<Args&&>(args)...) } noexcept;
     };
   }
 
-  struct deallocate_t {
+  struct async_new_t {
     template <class Alloc, class... Args>
-      requires deallocate_::has_member_cust<Alloc, Args...>
+      requires async_new_::has_member_cust<Alloc, Args...>
     constexpr auto operator()(Alloc alloc, Args&&... args) const
-      noexcept(deallocate_::nothrow_member_cust<Alloc, Args...>) {
-      return alloc.deallocate(deallocate, static_cast<Args&&>(args)...);
+      noexcept(async_new_::nothrow_member_cust<Alloc, Args...>) {
+      return alloc.async_new(async_new, static_cast<Args&&>(args)...);
     }
   };
 
-  inline constexpr deallocate_t deallocate{};
+  inline constexpr async_new_t async_new{};
 
-  struct destroy_and_deallocate_t;
-  extern const destroy_and_deallocate_t destroy_and_deallocate;
+  struct async_new_array_t;
+  extern const async_new_array_t async_new_array;
 
-  namespace destroy_and_deallocate_ {
+  namespace async_new_array_ {
     template <class Alloc, class... Args>
     concept has_member_cust = requires(Alloc alloc, Args&&... args) {
-      { alloc.destroy_and_deallocate(destroy_and_deallocate, static_cast<Args&&>(args)...) };
+      { alloc.async_new_array(async_new_array, static_cast<Args&&>(args)...) };
     };
 
     template <class Alloc, class... Args>
     concept nothrow_member_cust = requires(Alloc alloc, Args&&... args) {
-      { alloc.destroy_and_deallocate(destroy_and_deallocate, static_cast<Args&&>(args)...) } noexcept;
+      { alloc.async_new_array(async_new_array, static_cast<Args&&>(args)...) } noexcept;
     };
   }
 
-  struct destroy_and_deallocate_t {
+  struct async_new_array_t {
     template <class Alloc, class... Args>
-      requires destroy_and_deallocate_::has_member_cust<Alloc, Args...>
+      requires async_new_array_::has_member_cust<Alloc, Args...>
     constexpr auto operator()(Alloc alloc, Args&&... args) const
-      noexcept(destroy_and_deallocate_::nothrow_member_cust<Alloc, Args...>) {
-      return alloc.destroy_and_deallocate(destroy_and_deallocate, static_cast<Args&&>(args)...);
+      noexcept(async_new_array_::nothrow_member_cust<Alloc, Args...>) {
+      return alloc.async_new_array(async_new_array, static_cast<Args&&>(args)...);
     }
   };
 
-  inline constexpr destroy_and_deallocate_t destroy_and_deallocate{};
+  inline constexpr async_new_array_t async_new_array{};
 
-  template <class Alloc>
-  concept allocator = requires(Alloc alloc, std::size_t size, void* ptr) {
-    { allocate(alloc, size) };
-    { deallocate(alloc, ptr) };
-    { destroy_and_deallocate(alloc, ptr) };
+  struct async_delete_t;
+  extern const async_delete_t async_delete;
+
+  namespace async_delete_ {
+    template <class Alloc, class... Args>
+    concept has_member_cust = requires(Alloc alloc, Args&&... args) {
+      { alloc.async_delete(async_delete, static_cast<Args&&>(args)...) };
+    };
+
+    template <class Alloc, class... Args>
+    concept nothrow_member_cust = requires(Alloc alloc, Args&&... args) {
+      { alloc.async_delete(async_delete, static_cast<Args&&>(args)...) } noexcept;
+    };
+  }
+
+  struct async_delete_t {
+    template <class Alloc, class... Args>
+      requires async_delete_::has_member_cust<Alloc, Args...>
+    constexpr auto operator()(Alloc alloc, Args&&... args) const
+      noexcept(async_delete_::nothrow_member_cust<Alloc, Args...>) {
+      return alloc.async_delete(async_delete, static_cast<Args&&>(args)...);
+    }
   };
+
+  inline constexpr async_delete_t async_delete{};
+
+  template <class Alloc, class T, class... Args>
+  concept allocator = //
+    requires(Alloc alloc, T* ptr, Args&&... args) {
+      { async_new(alloc, static_cast<Args&&>(args)...) };
+      { async_delete(alloc, ptr) };
+    };
+
+  template <class Alloc, class T>
+  concept array_allocator = //
+    requires(Alloc alloc, std::size_t size, T* ptr) {
+      { async_new_array(alloc, size) };
+      { async_delete(alloc, ptr) };
+    };
 
   template <class T, class Receiver>
   struct delete_operation {
@@ -147,13 +180,27 @@ namespace sio::async {
       });
     }
 
-    auto deallocate(deallocate_t, T* ptr) const {
-      return stdexec::then(stdexec::just(ptr), [](T* ptr) noexcept {
-        std::allocator<T>().deallocate(ptr, 1);
-      });
+    template <class... Args>
+    auto async_new(async_new_t, Args&&... args) const {
+      return stdexec::then(
+        stdexec::just(static_cast<Args&&>(args)...), []<class... As>(As&&... args) {
+          std::allocator<T> alloc{};
+          T* ptr = alloc.allocate(1);
+          try {
+            return new (ptr) T(static_cast<As&&>(args)...);
+          } catch (...) {
+            alloc.deallocate(ptr, 1);
+            throw;
+          }
+        });
     }
 
-    delete_sender<T> destroy_and_deallocate(destroy_and_deallocate_t, T* ptr) const {
+    auto async_new_array(async_new_array_t, std::size_t size) const {
+
+      return stdexec::then(stdexec::just(size), [](std::size_t size) { return new T[size]; });
+    }
+
+    delete_sender<T> async_delete(async_delete_t, T* ptr) const {
       return {ptr};
     }
   };

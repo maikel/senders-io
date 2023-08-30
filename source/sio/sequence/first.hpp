@@ -18,8 +18,6 @@
 #include "../concepts.hpp"
 #include "./sequence_concepts.hpp"
 
-#include <exec/materialize.hpp>
-
 namespace sio {
   namespace first_ {
     using namespace stdexec;
@@ -96,12 +94,23 @@ namespace sio {
 
     template <class ItemReceiver, class ResultVariant, bool IsLockStep>
     struct item_receiver {
+      using is_receiver = void;
       item_operation_base<ItemReceiver, ResultVariant, IsLockStep>* op_;
 
       template <class... Args>
-        requires emplaceable<ResultVariant, __decayed_tuple<Args...>, Args...>
       void set_value(set_value_t, Args&&... args) && noexcept {
-        op_->result_->emplace(static_cast<Args&&>(args)...);
+        op_->result_->emplace(set_value_t{}, static_cast<Args&&>(args)...);
+        stdexec::set_stopped(static_cast<ItemReceiver&&>(op_->receiver_));
+      }
+
+      void set_stopped(set_stopped_t) && noexcept {
+        op_->result_->emplace(set_stopped_t{});
+        stdexec::set_stopped(static_cast<ItemReceiver&&>(op_->receiver_));
+      }
+
+      template <class Error>
+      void set_error(set_error_t, Error&& error) && noexcept {
+        op_->result_->emplace(set_error_t{}, static_cast<Error&&>(error));
         stdexec::set_stopped(static_cast<ItemReceiver&&>(op_->receiver_));
       }
 
@@ -116,11 +125,8 @@ namespace sio {
       using item_receiver_t = item_receiver<ItemReceiver, ResultVariant, IsLockStep>;
       connect_result_t<Sender, item_receiver_t> op_;
 
-      item_operation(
-        result_type<ResultVariant, IsLockStep>* parent,
-        Sender&& sndr,
-        ItemReceiver rcvr) noexcept(__nothrow_decay_copyable<ItemReceiver>&&
-                                      __nothrow_connectable<Sender, item_receiver_t>)
+      item_operation(result_type<ResultVariant, IsLockStep>* parent, Sender&& sndr, ItemReceiver rcvr) noexcept(
+        __nothrow_decay_copyable<ItemReceiver> && __nothrow_connectable<Sender, item_receiver_t>)
         : base_type{static_cast<ItemReceiver&&>(rcvr), parent}
         , op_{stdexec::connect(static_cast<Sender&&>(sndr), item_receiver_t{this})} {
       }
@@ -132,11 +138,17 @@ namespace sio {
 
     template <class Sender, class ResultVariant, bool IsLockStep>
     struct item_sender {
+      struct type;
+    };
+
+    template <class Sender, class ResultVariant, bool IsLockStep>
+    struct item_sender<Sender, ResultVariant, IsLockStep>::type {
+      using is_sender = void;
       using completion_signatures = stdexec::completion_signatures<set_stopped_t()>;
 
       template <class Self, class Receiver>
       using operation_t =
-        item_operation<__copy_cvref_t<Self, Sender>, Receiver, ResultVariant, IsLockStep>;
+        item_operation<copy_cvref_t<Self, Sender>, Receiver, ResultVariant, IsLockStep>;
 
       template <class Receiver>
       using receiver_t = item_receiver<Receiver, ResultVariant, IsLockStep>;
@@ -144,18 +156,12 @@ namespace sio {
       Sender sender_;
       result_type<ResultVariant, IsLockStep>* parent_;
 
-      template <decays_to<item_sender> Self, receiver Receiver>
+      template <decays_to<type> Self, receiver Receiver>
         requires sender_to<copy_cvref_t<Self, Sender>, receiver_t<Receiver>>
       static auto connect(Self&& self, connect_t, Receiver rcvr) -> operation_t<Self, Receiver> {
         return {self.parent_, static_cast<Self&&>(self).sender_, static_cast<Receiver&&>(rcvr)};
       }
     };
-
-    template <class Sender, class ResultVariant, bool IsLockStep>
-    auto make_item_sender(Sender&& sndr, result_type<ResultVariant, IsLockStep>* parent) noexcept(
-      nothrow_decay_copyable<Sender>) -> item_sender<__decay_t<Sender>, ResultVariant, IsLockStep> {
-      return {static_cast<Sender&&>(sndr), parent};
-    }
 
     template <class Receiver, class ResultVariant, bool IsLockStep>
     struct operation_base : result_type<ResultVariant, IsLockStep> {
@@ -164,11 +170,13 @@ namespace sio {
 
     template <class Receiver, class ResultVariant, bool IsLockStep>
     struct receiver {
+      using is_receiver = void;
       operation_base<Receiver, ResultVariant, IsLockStep>* op_;
 
       template <class Item>
-      auto set_next(exec::set_next_t, Item&& item) {
-        return make_item_sender(exec::materialize(static_cast<Item&&>(item)), op_);
+      auto set_next(exec::set_next_t, Item&& item) noexcept(nothrow_decay_copyable<Item>) ->
+        typename item_sender<decay_t<Item>, ResultVariant, IsLockStep>::type {
+        return {static_cast<Item&&>(item), op_};
       }
 
       void set_value(set_value_t) && noexcept {
@@ -222,9 +230,10 @@ namespace sio {
 
       exec::subscribe_result_t<Sender, receiver_t> op_;
 
-      operation(Sender&& sndr, Receiver rcvr)     //
-        noexcept(nothrow_decay_copyable<Receiver> //
-                   && exec::nothrow_subscribeable<Sender, receiver_t>)
+      operation(Sender&& sndr, Receiver rcvr) //
+        noexcept(
+          nothrow_decay_copyable<Receiver> //
+          && exec::nothrow_subscribeable<Sender, receiver_t>)
         : base_type{{}, static_cast<Receiver&&>(rcvr)}
         , op_{exec::subscribe(static_cast<Sender&&>(sndr), receiver_t{this})} {
       }
@@ -236,20 +245,25 @@ namespace sio {
 
     template <class Sequence>
     struct sender {
+      struct type;
+    };
+
+    template <class Sequence>
+    struct sender<Sequence>::type {
       using is_sender = void;
 
       template <class Self, class Receiver>
-      using operation_t = operation<__copy_cvref_t<Self, Sequence>, Receiver>;
+      using operation_t = operation<copy_cvref_t<Self, Sequence>, Receiver>;
 
       template <class Self, class Receiver>
-      using ResultVariant = result_variant_t<__copy_cvref_t<Self, Sequence>, env_of_t<Receiver>>;
+      using ResultVariant = result_variant_t<copy_cvref_t<Self, Sequence>, env_of_t<Receiver>>;
 
       template <class Self, class Receiver>
       using receiver_t = receiver<Receiver, ResultVariant<Self, Receiver>, IsLockStep<Sequence>>;
 
       [[no_unique_address]] Sequence sequence_;
 
-      template <decays_to<sender> Self, stdexec::receiver Receiver>
+      template <decays_to<type> Self, stdexec::receiver Receiver>
         requires exec::sequence_sender_to<
           copy_cvref_t<Self, Sequence>,
           receiver_t<copy_cvref_t<Self, Sequence>, Receiver>>
@@ -267,8 +281,8 @@ namespace sio {
 
     struct first_t {
       template <exec::sequence_sender Sender>
-      auto operator()(Sender&& seq) const noexcept(__nothrow_decay_copyable<Sender>)
-        -> sender<__decay_t<Sender>> {
+      auto operator()(Sender&& seq) const noexcept(nothrow_decay_copyable<Sender>) ->
+        typename sender<__decay_t<Sender>>::type {
         return {static_cast<Sender&&>(seq)};
       }
 

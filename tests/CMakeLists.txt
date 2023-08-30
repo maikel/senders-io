@@ -11,6 +11,18 @@ find_package(Catch2 REQUIRED)
 
 add_executable(test_sio
   test_main.cpp
+  sequence/test_ignore_all.cpp
+  sequence/test_first.cpp
+  sequence/test_last.cpp
+  sequence/test_any_sequence_of.cpp
+  sequence/test_iterate.cpp
+  sequence/test_empty_sequence.cpp
+  sequence/test_first.cpp
+  sequence/test_fork.cpp
+  sequence/test_merge_each.cpp
+  sequence/test_scan.cpp
+  sequence/test_transform_each.cpp
+  sequence/test_zip.cpp
   test_async_resource.cpp
   test_file_handle.cpp
   test_async_accept.cpp
@@ -18,20 +30,12 @@ add_executable(test_sio
   test_async_channel.cpp
   test_memory_pool.cpp
   test_tap.cpp
+  net/test_can_endpoint.cpp
+  # net/test_can_socket.cpp
   net/test_address.cpp
   net/test_endpoint.cpp
   net/test_resolve.cpp
   net/test_socket_handle.cpp
-  sequence/test_any_sequence_of.cpp
-  sequence/test_empty_sequence.cpp
-  sequence/test_first.cpp
-  sequence/test_ignore_all.cpp
-  sequence/test_iterate.cpp
-  sequence/test_last.cpp
-  sequence/test_merge_each.cpp
-  sequence/test_scan.cpp
-  sequence/test_transform_each.cpp
-  sequence/test_zip.cpp
 )
 target_include_directories(test_sio PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(test_sio PRIVATE sio::sio Catch2::Catch2)

@@ -2,6 +2,7 @@
 #include "sio/sequence/empty_sequence.hpp"
 #include "sio/sequence/ignore_all.hpp"
 #include "sio/sequence/first.hpp"
+#include "sio/sequence/last.hpp"
 #include "sio/sequence/iterate.hpp"
 #include "sio/sequence/then_each.hpp"
 
@@ -42,12 +43,25 @@ TEST_CASE(
   CHECK(x == 42);
 }
 
+TEST_CASE(
+  "any_sequence_of - binds to just(42) and get back the result with last",
+  "[any_sequence_of][last]") {
+  any_sequence_of<set_value_t(int)> sequence = stdexec::just(42);
+  auto result = stdexec::sync_wait(sio::last(std::move(sequence)));
+  CHECK(result);
+  auto [x] = *result;
+  CHECK(x == 42);
+}
+
 TEST_CASE("any_sequence_of - with iterate", "[any_sequence_of][iterate][then_each][ignore_all]") {
   any_sequence_of<set_value_t(int), set_stopped_t(), set_error_t(std::exception_ptr)> sequence =
     sio::iterate(std::ranges::views::iota(0, 10));
 
   int sum = 0;
-  auto compute_sum = std::move(sequence) | sio::then_each([&](int x) { sum += x; }) | sio::ignore_all();
+  auto compute_sum =                           //
+    std::move(sequence)                        //
+    | sio::then_each([&](int x) { sum += x; }) //
+    | sio::ignore_all();
   CHECK(stdexec::sync_wait(std::move(compute_sum)));
   CHECK(sum == 45);
 }
