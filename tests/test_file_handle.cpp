@@ -41,17 +41,14 @@ task<void> no_op_file(sio::io_uring::seekable_byte_stream input) {
 
 template <stdexec::sender Sender>
 void sync_wait(exec::io_uring_context& context, Sender&& sender) {
-  stdexec::sync_wait(
-    stdexec::into_variant(exec::when_any(std::forward<Sender>(sender), context.run())));
+  stdexec::sync_wait(exec::when_any(std::forward<Sender>(sender), context.run()));
 }
 
 TEST_CASE("file_handle - Open a path", "[file_handle]") {
   exec::io_uring_context context{};
   sio::io_uring::io_scheduler scheduler{&context};
   sync_wait(
-    context,
-    sio::async::use_resources(
-      no_op_path, sio::async::open_path(scheduler, "/dev/null")));
+    context, sio::async::use_resources(no_op_path, sio::async::open_path(scheduler, "/dev/null")));
 }
 
 TEST_CASE("file_handle - Open a file to /dev/null", "[file_handle]") {

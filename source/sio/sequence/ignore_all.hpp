@@ -121,6 +121,7 @@ namespace sio {
 
       template <class Error>
         requires emplaceable<ResultVariant, decayed_tuple<set_error_t, Error>, set_error_t, Error>
+              && callable<set_stopped_t, ItemReceiver&&>
       void set_error(set_error_t, Error&& error) && noexcept {
         op_->result_->emplace(set_error_t{}, static_cast<Error&&>(error));
         stdexec::set_stopped(static_cast<ItemReceiver&&>(op_->receiver_));

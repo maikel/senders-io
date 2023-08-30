@@ -98,18 +98,18 @@ namespace sio {
       item_operation_base<ItemReceiver, ResultVariant, IsLockStep>* op_;
 
       template <class... Args>
-      void set_value(set_value_t, Args&&... args) const noexcept {
+      void set_value(set_value_t, Args&&... args) && noexcept {
         op_->result_->emplace(set_value_t{}, static_cast<Args&&>(args)...);
         stdexec::set_stopped(static_cast<ItemReceiver&&>(op_->receiver_));
       }
 
-      void set_stopped(set_stopped_t) const noexcept {
+      void set_stopped(set_stopped_t) && noexcept {
         op_->result_->emplace(set_stopped_t{});
         stdexec::set_stopped(static_cast<ItemReceiver&&>(op_->receiver_));
       }
 
       template <class Error>
-      void set_error(set_error_t, Error&& error) const noexcept {
+      void set_error(set_error_t, Error&& error) && noexcept {
         op_->result_->emplace(set_error_t{}, static_cast<Error&&>(error));
         stdexec::set_stopped(static_cast<ItemReceiver&&>(op_->receiver_));
       }
