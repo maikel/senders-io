@@ -79,7 +79,7 @@ TEST_CASE(
   "[merge_each][ignore_all][then_each][iterate]") {
   std::array<int, 2> arr{42, 42};
   int count = 0;
-  auto merge = sio::merge_each(stdexec::just(42), sio::iterate(arr)) //
+  auto merge = sio::merge_each(stdexec::just(42), sio::iterate(std::ranges::views::all(arr))) //
              | sio::then_each([&](int value) {
                  ++count;
                  CHECK(value == 42);
@@ -91,12 +91,11 @@ TEST_CASE(
 TEST_CASE("merge_each - for subsequences", "[merge_each][then_each][iterate]") {
   std::array<int, 2> indices{1, 2};
   int counter = 0;
-  auto merge = sio::iterate(indices) //
+  auto merge = sio::iterate(std::ranges::views::all(indices)) //
              | sio::then_each([](int i) {
                  return sio::iterate(std::array<int, 2>{i, i});
-               })                //
-             | sio::merge_each()
-             | sio::then_each([&](int value) {
+               }) //
+             | sio::merge_each() | sio::then_each([&](int value) {
                  if (counter == 0)
                    CHECK(value == 1);
                  else if (counter == 1)
