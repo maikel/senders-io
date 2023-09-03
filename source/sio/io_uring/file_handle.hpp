@@ -467,6 +467,7 @@ namespace sio::io_uring {
     using buffers_type = std::span<buffer_type>;
     using const_buffer_type = std::span<const std::byte>;
     using const_buffers_type = std::span<const_buffer_type>;
+    using offset_type = ::off_t;
     using extent_type = ::off_t;
 
     using byte_stream::byte_stream;

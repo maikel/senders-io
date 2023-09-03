@@ -69,6 +69,7 @@ target_sources(sio PUBLIC
     source/sio/io_concepts.hpp
     source/sio/memory_pool.hpp
     source/sio/net_concepts.hpp
+    source/sio/read_batched.hpp
     source/sio/tap.hpp
     source/sio/with_env.hpp)
 target_link_libraries(sio PUBLIC STDEXEC::stdexec)
