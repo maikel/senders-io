@@ -79,7 +79,7 @@ TEST_CASE("zip - with two justs connects with first", "[zip][first]") {
 TEST_CASE("zip - array with sender", "[zip][iterate]") {
   std::array<int, 2> array{42, 43};
   int count = 0;
-  auto sequence = sio::zip(stdexec::just(42), sio::iterate(array)) //
+  auto sequence = sio::zip(stdexec::just(42), sio::iterate(std::ranges::views::all(array))) //
                 | sio::then_each([&](int v, int w) {
                     ++count;
                     CHECK(v == 42);
@@ -92,12 +92,14 @@ TEST_CASE("zip - array with sender", "[zip][iterate]") {
 TEST_CASE("zip - array with array", "[zip][iterate]") {
   std::array<int, 3> array{42, 43, 44};
   int count = 0;
-  auto sequence = sio::zip(sio::iterate(array), sio::iterate(array)) //
-                | sio::then_each([&](int v, int w) {
-                    CHECK(v == 42 + count);
-                    CHECK(v == w);
-                    ++count;
-                  });
+  auto sequence =
+    sio::zip(
+      sio::iterate(std::ranges::views::all(array)), sio::iterate(std::ranges::views::all(array))) //
+    | sio::then_each([&](int v, int w) {
+        CHECK(v == 42 + count);
+        CHECK(v == w);
+        ++count;
+      });
   stdexec::sync_wait(sio::ignore_all(sequence));
   CHECK(count == 3);
 }
