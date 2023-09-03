@@ -7,6 +7,8 @@
 #include "./sequence/let_value_each.hpp"
 #include "./sequence/zip.hpp"
 
+#include <span>
+
 namespace sio::async {
   template <seekable_byte_stream ByteStream>
   auto read_batched(
