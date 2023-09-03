@@ -167,7 +167,7 @@ namespace sio {
 
     struct iterate_t {
       template <std::ranges::range Range>
-      sequence<Range> operator()(Range&& range) const noexcept {
+      sequence<decay_t<Range>> operator()(Range&& range) const noexcept {
         return {static_cast<Range&&>(range)};
       }
     };

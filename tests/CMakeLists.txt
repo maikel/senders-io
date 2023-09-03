@@ -29,6 +29,7 @@ add_executable(test_sio
   test_async_mutex.cpp
   test_async_channel.cpp
   test_memory_pool.cpp
+  test_read_batched.cpp
   test_tap.cpp
   net/test_can_endpoint.cpp
   # net/test_can_socket.cpp
