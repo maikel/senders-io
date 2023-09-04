@@ -77,7 +77,7 @@ int main(int argc, char *argv[]) {
         if (buffer_data[j] != offsets[i] + j - lens[i]) {
           std::cerr << "test failed in read " << i << ' ' << " and at index " << j - lens[i] << " !\n";
           std::cerr << buffer_data[j] << " != " << offsets[i] + j - lens[i] << '\n';
-          // return -1;
+          return -1;
         }
     }
     const auto avg_time = std::accumulate(times.begin(), times.end(), 0.0) / times.size();
