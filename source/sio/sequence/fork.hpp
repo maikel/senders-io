@@ -309,7 +309,7 @@ namespace sio {
       }
 
       void set_value(stdexec::set_value_t) && noexcept {
-        sequence_op_->request_stop();
+        sequence_op_->decrease_ref();
       }
 
       template <class Error>
