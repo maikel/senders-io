@@ -47,7 +47,8 @@ int main(int argc, char* argv[]) {
   {
     exec::safe_file_descriptor fd{::memfd_create("test", 0)};
     if (argc >= 5) {
-      fd = exec::safe_file_descriptor{::open(argv[4], O_TMPFILE | O_RDWR, S_IRUSR | S_IWUSR)};
+      fd = exec::safe_file_descriptor{
+        ::open(argv[4], O_DIRECT | O_TMPFILE | O_RDWR, S_IRUSR | S_IWUSR)};
     }
     auto block_size = get_block_size(fd);
     const std::size_t num_ints =
@@ -127,7 +128,7 @@ int main(int argc, char* argv[]) {
     const auto n_bytes = n_iops * block_size;
     std::cout << "Read " << num_reads << " blocks of size " << block_size << " bytes in time "
               << avg_time << "s for an average of " << num_reads / avg_time << " IOPS"
-              << " and an average copy rate of " << n_bytes / (1 << 30) << " GiB/s" << std::endl;
+              << " and an average copy rate of " << n_bytes / (1 << 20) << " MiB/s" << std::endl;
   }
   return 0;
 }
