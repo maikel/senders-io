@@ -20,23 +20,32 @@ int main(int argc, char *argv[]) {
   const std::size_t num_reads = argc >= 4 ? std::stoul(argv[3]) : 1000000;
   {
     exec::safe_file_descriptor fd{::memfd_create("test", 0)};
-    if (argc >= 2)
-      fd = exec::safe_file_descriptor{::open(argv[1], O_TMPFILE | O_RDWR, S_IRUSR | S_IWUSR)};
+    if (argc >= 5) {
+      fd = exec::safe_file_descriptor{::open(argv[4], O_TMPFILE | O_RDWR, S_IRUSR | S_IWUSR)};
+    }
+    if (!fd) {
+      std::cerr << "file open unsuccessful: " << std::strerror(errno) << '\n';
+      return -1;
+    }
     {
       auto a = std::make_unique_for_overwrite<int[]>(num_ints);
       std::iota(a.get(), a.get() + num_ints, 0);
-      
+
       const auto file_size = sizeof(a.get()[0]) * num_ints;
       if (::ftruncate(fd, file_size) != 0) {
-        std::cerr << "file resize unsuccessful!\n";
+        std::cerr << "file resize unsuccessful: " << std::strerror(errno) << '\n';
         return -1;
       }
       if (::pwrite(fd, a.get(), file_size, 0) != file_size) {
-        std::cerr << "file write unsuccessful!\n";
+        std::cerr << "file write unsuccessful: " << std::strerror(errno) << '\n';
         return -1;
       }
     }
-    exec::io_uring_context context{};
+    unsigned submission_queue_length = 1024;
+    if (argc >= 2) {
+      submission_queue_length = std::stoul(argv[1]);
+    }
+    exec::io_uring_context context{submission_queue_length};
     sio::io_uring::native_fd_handle fdh{context, std::move(fd)};
     sio::io_uring::seekable_byte_stream stream{std::move(fdh)};
     using offset_type = sio::async::offset_type_of_t<decltype(stream)>;
@@ -62,7 +71,8 @@ int main(int argc, char *argv[]) {
     auto buffer_data = buffer.get();
     std::vector<std::span<std::byte>> buffers;
     for (int64_t i = 0; i < num_reads; i++)
-      buffers.push_back(std::as_writable_bytes(std::span{buffer_data + lens[i], buffer_data + lens[i + 1]}));
+      buffers.push_back(
+        std::as_writable_bytes(std::span{buffer_data + lens[i], buffer_data + lens[i + 1]}));
     std::vector<double> times;
     for (int i = 0; i < 1; i++) {
       auto sndr = sio::async::read_batched(stream, buffers, byte_offsets);
@@ -75,15 +85,18 @@ int main(int argc, char *argv[]) {
     for (int64_t i = 0; i < num_reads; i++) {
       for (auto j = lens[i]; j < lens[i + 1]; j++)
         if (buffer_data[j] != offsets[i] + j - lens[i]) {
-          std::cerr << "test failed in read " << i << ' ' << " and at index " << j - lens[i] << " !\n";
+          std::cerr << "test failed in read " << i << ' ' << " and at index " << j - lens[i]
+                    << " !\n";
           std::cerr << buffer_data[j] << " != " << offsets[i] + j - lens[i] << '\n';
           return -1;
         }
     }
     const auto avg_time = std::accumulate(times.begin(), times.end(), 0.0) / times.size();
-    std::cout << "Read " << num_reads << " blocks of sizes upto " << max_num_ints * item_size
+    std::cout
+      << "Read " << num_reads << " blocks of sizes upto " << max_num_ints * item_size
       << " bytes in time " << avg_time << "s for an average of " << num_reads / avg_time << " IOPS"
-      << " and an average copy rate of " << total_len * item_size / avg_time / (1 << 30) << " GiB/s" << std::endl;
+      << " and an average copy rate of " << total_len * item_size / avg_time / (1 << 30) << " GiB/s"
+      << std::endl;
   }
   return 0;
 }
