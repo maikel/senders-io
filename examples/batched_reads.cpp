@@ -16,7 +16,7 @@
 #include <ranges>
 #include <string>
 #include <thread>
-#include <barrier>
+#include <latch>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -304,8 +304,7 @@ auto read_batched(
     | sio::ignore_all();
 }
 
-template <typename CompletionFunction>
-void run_io_uring(const int thread_id, std::barrier<CompletionFunction> &barrier,
+void run_io_uring(const int thread_id, std::latch &barrier,
  const program_options& options, std::span<const file_options> files, const std::size_t n_bytes_per_thread, counters& stats) {
   std::mt19937_64 rng{options.seed + thread_id};
   thread_state state(
@@ -391,7 +390,7 @@ int main(int argc, char* argv[]) {
   program_options options(argc, argv);
   // libc++ has no jthread yet
   std::vector<std::thread> threads{};
-  std::barrier barrier{options.nthreads + 1};
+  std::latch barrier{options.nthreads + 1};
   counters statistics{};
   int n_files_per_thread = options.files.size() / options.nthreads;
   if (n_files_per_thread < 1) {
@@ -406,7 +405,7 @@ int main(int argc, char* argv[]) {
     } else {
       files = files.subspan(i * n_files_per_thread, n_files_per_thread);
     }
-    threads.emplace_back(run_io_uring<std::__empty_completion>, i, std::ref(barrier), std::ref(options), files, n_bytes_per_thread, std::ref(statistics));
+    threads.emplace_back(run_io_uring, i, std::ref(barrier), std::ref(options), files, n_bytes_per_thread, std::ref(statistics));
   }
 
   barrier.arrive_and_wait();
