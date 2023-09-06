@@ -16,6 +16,7 @@
 #include <ranges>
 #include <string>
 #include <thread>
+#include <barrier>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -303,7 +304,17 @@ auto read_batched(
     | sio::ignore_all();
 }
 
-void run_io_uring(thread_state& state, counters& stats) {
+template <typename CompletionFunction>
+void run_io_uring(const int thread_id, std::barrier<CompletionFunction> &barrier,
+ const program_options& options, std::span<const file_options> files, const std::size_t n_bytes_per_thread, counters& stats) {
+  std::mt19937_64 rng{options.seed + thread_id};
+  thread_state state(
+      files,
+      options.submission_queue_length,
+      n_bytes_per_thread,
+      options.block_size,
+      options.buffered,
+      rng);
   namespace stdv = std::views;
   auto file_view =         //
     stdv::all(state.files) //
@@ -318,6 +329,7 @@ void run_io_uring(thread_state& state, counters& stats) {
   // TODO we need to contstrain the number of active operations with a memory pool.
   // The current memory pool just limits the number of allocated bytes.
   // I want one that limits the number of allocated ops.
+  barrier.arrive_and_wait();
   stdexec::sync_wait(exec::when_any(std::move(read_sender), state.context.run()));
   std::scoped_lock lock{stats.mtx};
   stats.n_completions += 1;
@@ -377,10 +389,9 @@ void print_statistics(const program_options& options, counters& statistics) {
 
 int main(int argc, char* argv[]) {
   program_options options(argc, argv);
-  std::mt19937_64 rng{options.seed};
-  std::vector<std::unique_ptr<thread_state>> states{};
   // libc++ has no jthread yet
   std::vector<std::thread> threads{};
+  std::barrier barrier{options.nthreads + 1};
   counters statistics{};
   int n_files_per_thread = options.files.size() / options.nthreads;
   if (n_files_per_thread < 1) {
@@ -395,16 +406,10 @@ int main(int argc, char* argv[]) {
     } else {
       files = files.subspan(i * n_files_per_thread, n_files_per_thread);
     }
-    auto& state = states.emplace_back(std::make_unique<thread_state>(
-      files,
-      options.submission_queue_length,
-      n_bytes_per_thread,
-      options.block_size,
-      options.buffered,
-      rng));
-    threads.emplace_back(run_io_uring, std::ref(*state), std::ref(statistics));
+    threads.emplace_back(run_io_uring<std::__empty_completion>, i, std::ref(barrier), std::ref(options), files, n_bytes_per_thread, std::ref(statistics));
   }
 
+  barrier.arrive_and_wait();
   print_statistics(options, statistics);
 
   for (std::thread& t: threads) {
