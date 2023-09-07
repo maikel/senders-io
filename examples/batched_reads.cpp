@@ -17,6 +17,7 @@
 #include <string>
 #include <thread>
 #include <latch>
+#include <new>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -264,24 +265,38 @@ struct counters {
   std::mutex mtx{};
   std::condition_variable cv{};
   int n_completions{};
-  std::atomic<std::size_t> n_bytes_read = 0;
-  std::atomic<std::size_t> n_io_ops = 0;
+  std::vector<std::atomic<std::size_t>> n_bytes_read;
+  std::vector<std::atomic<std::size_t>> n_io_ops;
+  static constexpr int factor = std::hardware_destructive_interference_size / sizeof(std::size_t);
 
-  void notify_read(std::size_t n_bytes) {
-    n_bytes_read.fetch_add(n_bytes, std::memory_order_relaxed);
-    n_io_ops.fetch_add(1, std::memory_order_relaxed);
+  counters(int nthreads) : n_bytes_read(nthreads * factor), n_io_ops(nthreads * factor) {}
+
+  void notify_read(std::size_t n_bytes, int thread_id) {
+    n_bytes_read[thread_id * factor].fetch_add(n_bytes, std::memory_order_relaxed);
+    n_io_ops[thread_id * factor].fetch_add(1, std::memory_order_relaxed);
   }
+
+  auto load_stats() {
+    auto n_bytes_read_ = std::accumulate(n_bytes_read.begin(), n_bytes_read.end(), std::size_t{}, [](auto a, auto &b) {
+      return a + b.load(std::memory_order_relaxed);
+    });
+    auto n_io_ops_ = std::accumulate(n_io_ops.begin(), n_io_ops.end(), std::size_t{}, [](auto a, auto &b) {
+      return a + b.load(std::memory_order_relaxed);
+    });
+    return std::make_pair(n_bytes_read_, n_io_ops_);
+  };
 };
 
 auto read_with_counter(
   sio::io_uring::seekable_byte_stream stream,
   std::span<std::byte> buffer,
   ::off_t offset,
-  counters& stats) {
+  counters& stats,
+  const int thread_id) {
   auto buffered_read_some = sio::buffered_sequence{sio::async::read_some(stream, buffer, offset)};
   auto with_increase_counters = sio::then_each(
-    std::move(buffered_read_some), [&stats](std::size_t n_bytes) noexcept {
-      stats.notify_read(n_bytes);
+    std::move(buffered_read_some), [&stats, thread_id](std::size_t n_bytes) noexcept {
+      stats.notify_read(n_bytes, thread_id);
       return n_bytes;
     });
   return sio::reduce(std::move(with_increase_counters), 0ull);
@@ -292,14 +307,15 @@ auto read_batched(
   ByteStream stream,
   sio::async::buffers_type_of_t<ByteStream> buffers,
   std::span<const sio::async::offset_type_of_t<ByteStream>> offsets,
-  counters& stats) {
+  counters& stats,
+  const int thread_id) {
   return                                                   //
     sio::zip(sio::iterate(buffers), sio::iterate(offsets)) //
     | sio::fork()                                          //
-    | sio::let_value_each([stream, &stats](
+    | sio::let_value_each([stream, &stats, thread_id](
                             sio::async::buffer_type_of_t<ByteStream> buffer,
                             sio::async::offset_type_of_t<ByteStream> offset) {
-        return read_with_counter(stream, buffer, offset, stats);
+        return read_with_counter(stream, buffer, offset, stats, thread_id);
       })
     | sio::ignore_all();
 }
@@ -322,7 +338,7 @@ void run_io_uring(const int thread_id, std::latch &barrier,
     sio::iterate(file_view) //
     | sio::fork()           //
     | sio::let_value_each([&](file_state& file) {
-        return read_batched(file.stream, file.buffers, file.offsets, stats);
+        return read_batched(file.stream, file.buffers, file.offsets, stats, thread_id);
       }) //
     | sio::ignore_all();
   // TODO we need to contstrain the number of active operations with a memory pool.
@@ -363,8 +379,7 @@ void print_statistics(const program_options& options, counters& statistics) {
   while (!wait_for_completion()) {
     auto now = std::chrono::steady_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(now - start);
-    auto n_bytes_read = statistics.n_bytes_read.load(std::memory_order_relaxed);
-    std::size_t n_io_ops = statistics.n_io_ops.load(std::memory_order_relaxed);
+    auto [n_bytes_read, n_io_ops] = statistics.load_stats();
     auto n_iops = n_io_ops * std::nano::den / elapsed.count();
     auto n_bytes = n_bytes_read * std::nano::den / elapsed.count();
     std::cout << "\rRead " << n_io_ops << " blocks of size " << options.block_size
@@ -375,8 +390,7 @@ void print_statistics(const program_options& options, counters& statistics) {
   }
   auto now = std::chrono::steady_clock::now();
   auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(now - start);
-  auto n_bytes_read = statistics.n_bytes_read.load(std::memory_order_relaxed);
-  std::size_t n_io_ops = statistics.n_io_ops.load(std::memory_order_relaxed);
+  auto [n_bytes_read, n_io_ops] = statistics.load_stats();
   auto n_iops = n_io_ops * std::nano::den / elapsed.count();
   auto n_bytes = n_bytes_read * std::nano::den / elapsed.count();
   std::cout << "\rRead " << n_io_ops << " blocks of size " << options.block_size
@@ -391,7 +405,7 @@ int main(int argc, char* argv[]) {
   // libc++ has no jthread yet
   std::vector<std::thread> threads{};
   std::latch barrier{options.nthreads + 1};
-  counters statistics{};
+  counters statistics{options.nthreads};
   int n_files_per_thread = options.files.size() / options.nthreads;
   if (n_files_per_thread < 1) {
     throw std::runtime_error{"Not enough files for the number of threads"};
