@@ -5,6 +5,7 @@
 #include <sio/sequence/then_each.hpp>
 #include <sio/sequence/ignore_all.hpp>
 #include <sio/memory_pool.hpp>
+#include <sio/with_env.hpp>
 
 #include <exec/when_any.hpp>
 
@@ -323,7 +324,7 @@ auto read_with_counter(
       stats.notify_read(n_bytes, thread_id);
       return n_bytes;
     });
-  return sio::reduce(std::move(with_increase_counters), 0ull);
+  return sio::reduce(std::move(with_increase_counters), std::size_t{0});
 }
 
 template <sio::async::seekable_byte_stream ByteStream>
@@ -334,7 +335,8 @@ auto read_batched(
   sio::memory_pool_allocator<std::byte> allocator,
   counters& stats,
   const int thread_id) {
-  return                                                   //
+  auto env = exec::make_env(exec::with(sio::async::get_allocator, allocator));
+  auto sender =
     sio::zip(sio::iterate(buffers), sio::iterate(offsets)) //
     | sio::fork()                                          //
     | sio::let_value_each([stream, &stats, thread_id](
@@ -342,8 +344,8 @@ auto read_batched(
                             sio::async::offset_type_of_t<ByteStream> offset) {
         return read_with_counter(stream, buffer, offset, stats, thread_id);
       })
-    | sio::ignore_all() //
-    | exec::write(exec::with(sio::async::get_allocator, allocator));
+    | sio::ignore_all();
+  return sio::with_env(env, std::move(sender));
 }
 
 void run_io_uring(

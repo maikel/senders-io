@@ -50,11 +50,11 @@ namespace sio {
 
     void set_value(stdexec::set_value_t, std::size_t n) && noexcept {
       advance_buffers(op_->parent_op_->sender_.buffers_, n);
-      stdexec::set_value(static_cast<ItemReceiver&&>(op_->item_receiver_), n);
+      stdexec::set_value(static_cast<ItemReceiver&&>(op_->item_receiver_), std::move(n));
     }
 
     void set_error(stdexec::set_error_t, std::error_code ec) && noexcept {
-      stdexec::set_error(static_cast<ItemReceiver&&>(op_->item_receiver_), ec);
+      stdexec::set_error(static_cast<ItemReceiver&&>(op_->item_receiver_), std::move(ec));
     }
 
     void set_stopped(stdexec::set_stopped_t) && noexcept {
