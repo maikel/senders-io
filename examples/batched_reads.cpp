@@ -379,11 +379,14 @@ std::ostream& print_time(Duration elapsed) {
   auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
   auto s = std::chrono::duration_cast<std::chrono::seconds>(elapsed).count();
   if (s > 0) {
-    return std::cout << s << "s";
+    auto rest = ms % 1000;
+    return std::cout << s << '.' << std::setw(3) << std::setfill('0') << rest << "s";
   } else if (ms > 0) {
-    return std::cout << ms << "ms";
+    auto rest = us % 1000;
+    return std::cout << ms << '.' << rest << "ms";
   } else if (us > 0) {
-    return std::cout << us << "us";
+    auto rest = ns % 1000;
+    return std::cout << us << '.' << rest << "us";
   }
   return std::cout << ns << "ns";
 }
@@ -403,8 +406,9 @@ void print_statistics(const program_options& options, counters& statistics) {
     auto [n_bytes_read, n_io_ops] = statistics.load_stats();
     auto n_iops = n_io_ops * std::nano::den / elapsed.count();
     auto n_bytes = n_bytes_read * std::nano::den / elapsed.count();
-    std::cout << "\rRead " << n_io_ops << " blocks of size " << options.block_size
-              << " bytes in time ";
+    auto progress = n_bytes_read * 100 / options.n_total_bytes;
+    std::cout << "\rRead " << n_io_ops << " blocks "
+              << "(" << progress << "%) of size " << options.block_size << " bytes in time ";
     print_time(elapsed)
       << " for an average of " << n_iops << " IOPS"
       << " and an average copy rate of " << n_bytes / (1 << 20) << " MiB/s" << std::flush;
@@ -414,8 +418,9 @@ void print_statistics(const program_options& options, counters& statistics) {
   auto [n_bytes_read, n_io_ops] = statistics.load_stats();
   auto n_iops = n_io_ops * std::nano::den / elapsed.count();
   auto n_bytes = n_bytes_read * std::nano::den / elapsed.count();
-  std::cout << "\rRead " << n_io_ops << " blocks of size " << options.block_size
-            << " bytes in time ";
+  auto progress = n_bytes_read * 100 / options.n_total_bytes;
+  std::cout << "\rRead " << n_io_ops << " blocks "
+            << "(" << progress << "%) of size " << options.block_size << " bytes in time ";
   print_time(elapsed)
     << " for an average of " << n_iops << " IOPS"
     << " and an average copy rate of " << n_bytes / (1 << 20) << " MiB/s" << std::endl;
