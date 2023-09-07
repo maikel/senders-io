@@ -55,8 +55,8 @@ namespace sio {
     return allocate_sender{this, static_cast<std::size_t>(index)};
   }
 
-  deallocate_sender memory_pool::deallocate(void* ptr) noexcept {
-    return deallocate_sender{this, ptr};
+  deallocate_sender memory_pool::deallocate(void* ptr, void (*destroy)(void*)) noexcept {
+    return deallocate_sender{this, ptr, destroy};
   }
 
   void memory_pool::reclaim_memory(void* ptr) noexcept {

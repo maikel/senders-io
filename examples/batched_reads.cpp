@@ -4,6 +4,7 @@
 #include <sio/sequence/iterate.hpp>
 #include <sio/sequence/then_each.hpp>
 #include <sio/sequence/ignore_all.hpp>
+#include <sio/memory_pool.hpp>
 
 #include <exec/when_any.hpp>
 
@@ -18,6 +19,7 @@
 #include <thread>
 #include <latch>
 #include <new>
+#include <memory_resource>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -260,7 +262,9 @@ struct thread_state {
     std::size_t block_size,
     bool buffered,
     std::mt19937_64& rng)
-    : context{iodepth} {
+    : context{iodepth}
+    , buffer(2 * iodepth * (1 << 10))
+    , upstream{buffer.data(), buffer.size(), never_alloc} {
     read_n_bytes /= files.size();
     read_n_bytes += (block_size - read_n_bytes % block_size);
     for (const file_options& fopts: files) {
@@ -270,6 +274,10 @@ struct thread_state {
 
   exec::io_uring_context context{};
   std::vector<file_state> files{};
+  std::vector<std::byte> buffer{};
+  std::pmr::memory_resource* never_alloc = std::pmr::null_memory_resource();
+  std::pmr::monotonic_buffer_resource upstream;
+  sio::memory_pool pool{&upstream};
 };
 
 struct counters {
@@ -323,6 +331,7 @@ auto read_batched(
   ByteStream stream,
   sio::async::buffers_type_of_t<ByteStream> buffers,
   std::span<const sio::async::offset_type_of_t<ByteStream>> offsets,
+  sio::memory_pool_allocator<std::byte> allocator,
   counters& stats,
   const int thread_id) {
   return                                                   //
@@ -333,7 +342,8 @@ auto read_batched(
                             sio::async::offset_type_of_t<ByteStream> offset) {
         return read_with_counter(stream, buffer, offset, stats, thread_id);
       })
-    | sio::ignore_all();
+    | sio::ignore_all() //
+    | exec::write(exec::with(sio::async::get_allocator, allocator));
 }
 
 void run_io_uring(
@@ -359,12 +369,10 @@ void run_io_uring(
     sio::iterate(file_view) //
     | sio::fork()           //
     | sio::let_value_each([&](file_state& file) {
-        return read_batched(file.stream, file.buffers, file.offsets, stats, thread_id);
+        sio::memory_pool_allocator<std::byte> allocator{&state.pool};
+        return read_batched(file.stream, file.buffers, file.offsets, allocator, stats, thread_id);
       }) //
     | sio::ignore_all();
-  // TODO we need to contstrain the number of active operations with a memory pool.
-  // The current memory pool just limits the number of allocated bytes.
-  // I want one that limits the number of allocated ops.
   barrier.arrive_and_wait();
   stdexec::sync_wait(exec::when_any(std::move(read_sender), state.context.run()));
   std::scoped_lock lock{stats.mtx};
