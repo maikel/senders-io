@@ -24,6 +24,17 @@
 #include <sys/unistd.h>
 #include <sys/ioctl.h>
 
+#ifdef __cpp_lib_hardware_interference_size
+#if __cpp_lib_hardware_interference_size >= 201703
+inline constexpr std::size_t hardware_destructive_interference_size =
+  std::hardware_destructive_interference_size;
+#else
+inline constexpr std::size_t hardware_destructive_interference_size = 2 * sizeof(std::max_align_t);
+#endif
+#else
+inline constexpr std::size_t hardware_destructive_interference_size = 2 * sizeof(std::max_align_t);
+#endif
+
 #include <getopt.h>
 
 void throw_errno_if(bool condition, const std::string& msg) {
@@ -267,9 +278,12 @@ struct counters {
   int n_completions{};
   std::vector<std::atomic<std::size_t>> n_bytes_read;
   std::vector<std::atomic<std::size_t>> n_io_ops;
-  static constexpr int factor = std::hardware_destructive_interference_size / sizeof(std::size_t);
+  static constexpr int factor = hardware_destructive_interference_size / sizeof(std::size_t);
 
-  counters(int nthreads) : n_bytes_read(nthreads * factor), n_io_ops(nthreads * factor) {}
+  counters(int nthreads)
+    : n_bytes_read(nthreads * factor)
+    , n_io_ops(nthreads * factor) {
+  }
 
   void notify_read(std::size_t n_bytes, int thread_id) {
     n_bytes_read[thread_id * factor].fetch_add(n_bytes, std::memory_order_relaxed);
@@ -277,12 +291,14 @@ struct counters {
   }
 
   auto load_stats() {
-    auto n_bytes_read_ = std::accumulate(n_bytes_read.begin(), n_bytes_read.end(), std::size_t{}, [](auto a, auto &b) {
-      return a + b.load(std::memory_order_relaxed);
-    });
-    auto n_io_ops_ = std::accumulate(n_io_ops.begin(), n_io_ops.end(), std::size_t{}, [](auto a, auto &b) {
-      return a + b.load(std::memory_order_relaxed);
-    });
+    auto n_bytes_read_ = std::accumulate(
+      n_bytes_read.begin(), n_bytes_read.end(), std::size_t{}, [](auto a, auto& b) {
+        return a + b.load(std::memory_order_relaxed);
+      });
+    auto n_io_ops_ = std::accumulate(
+      n_io_ops.begin(), n_io_ops.end(), std::size_t{}, [](auto a, auto& b) {
+        return a + b.load(std::memory_order_relaxed);
+      });
     return std::make_pair(n_bytes_read_, n_io_ops_);
   };
 };
@@ -320,16 +336,21 @@ auto read_batched(
     | sio::ignore_all();
 }
 
-void run_io_uring(const int thread_id, std::latch &barrier,
- const program_options& options, std::span<const file_options> files, const std::size_t n_bytes_per_thread, counters& stats) {
+void run_io_uring(
+  const int thread_id,
+  std::latch& barrier,
+  const program_options& options,
+  std::span<const file_options> files,
+  const std::size_t n_bytes_per_thread,
+  counters& stats) {
   std::mt19937_64 rng{options.seed + thread_id};
   thread_state state(
-      files,
-      options.submission_queue_length,
-      n_bytes_per_thread,
-      options.block_size,
-      options.buffered,
-      rng);
+    files,
+    options.submission_queue_length,
+    n_bytes_per_thread,
+    options.block_size,
+    options.buffered,
+    rng);
   namespace stdv = std::views;
   auto file_view =         //
     stdv::all(state.files) //
@@ -419,7 +440,14 @@ int main(int argc, char* argv[]) {
     } else {
       files = files.subspan(i * n_files_per_thread, n_files_per_thread);
     }
-    threads.emplace_back(run_io_uring, i, std::ref(barrier), std::ref(options), files, n_bytes_per_thread, std::ref(statistics));
+    threads.emplace_back(
+      run_io_uring,
+      i,
+      std::ref(barrier),
+      std::ref(options),
+      files,
+      n_bytes_per_thread,
+      std::ref(statistics));
   }
 
   barrier.arrive_and_wait();
