@@ -264,7 +264,7 @@ struct thread_state {
     bool buffered,
     std::mt19937_64& rng)
     : context{iodepth}
-    , buffer(2 * iodepth * (4 << 10))
+    , buffer(2 * iodepth * (1 << 10))
     , upstream{buffer.data(), buffer.size(), never_alloc} {
     read_n_bytes /= files.size();
     read_n_bytes += (block_size - read_n_bytes % block_size);
