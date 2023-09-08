@@ -106,6 +106,7 @@ struct file_state {
   explicit file_state(
     const file_options& fopts,
     exec::io_uring_context& context,
+    std::size_t memsize,
     std::size_t readn_n_bytes,
     std::size_t block_size,
     std::mt19937_64& rng,
@@ -115,9 +116,9 @@ struct file_state {
     if (fopts.use_memfd) {
       fd = exec::safe_file_descriptor{::memfd_create(fopts.path.c_str(), 0)};
       throw_errno_if(!fd, "Creating memfd failed");
-      throw_errno_if(::ftruncate(fd, readn_n_bytes) == -1, "Calling ftruncate failed");
-      file_size = readn_n_bytes;
-      num_blocks = readn_n_bytes / block_size;
+      throw_errno_if(::ftruncate(fd, memsize) == -1, "Calling ftruncate failed");
+      file_size = memsize;
+      num_blocks = memsize / block_size;
     } else {
       uint32_t flags = O_RDONLY | O_DIRECT;
       if (buffered) {
@@ -181,6 +182,7 @@ struct program_options {
         {    "size", required_argument, 0, 's'},
         { "verbose",       no_argument, 0,   0},
         { "memfile", required_argument, 0, 'm'},
+        { "memsize", required_argument, 0, 'z'},
         {    "help",       no_argument, 0, 'h'},
         {    "seed", required_argument, 0, 'r'},
         { "threads", required_argument, 0, 't'},
@@ -200,6 +202,9 @@ struct program_options {
 
       case 'm':
         files.emplace_back(file_options{optarg, true});
+        break;
+      case 'z':
+        memsize = std::stoull(optarg);
         break;
 
       case 'r':
@@ -228,6 +233,7 @@ Command Line Options:
   -b, --buffered         Open file in buffered mode
   -s, --size=BYTES       Set the total number of bytes to process.
   -m, --memfile=FILE     Specify a memory file to be used.
+  -z, --memsize=BYTES    Specify the size of the memory file.
   -r, --seed=SEED        Set the seed value for randomization.
   -t, --threads=THREADS  Set the number of threads to use.
   -h, --help             Display this help message and exit.
@@ -280,11 +286,13 @@ Report Bugs:
   std::uint32_t submission_queue_length = 1024;
   std::vector<file_options> files{};
   bool buffered = false;
+  std::size_t memsize = 1 << 20;
 };
 
 struct thread_state {
   explicit thread_state(
     std::span<const file_options> files,
+    std::size_t memsize,
     unsigned iodepth,
     std::size_t read_n_bytes,
     std::size_t block_size,
@@ -296,7 +304,7 @@ struct thread_state {
     read_n_bytes /= files.size();
     read_n_bytes += (block_size - read_n_bytes % block_size);
     for (const file_options& fopts: files) {
-      this->files.emplace_back(fopts, context, read_n_bytes, block_size, rng, buffered);
+      this->files.emplace_back(fopts, context, memsize, read_n_bytes, block_size, rng, buffered);
     }
   }
 
@@ -383,6 +391,7 @@ void run_io_uring(
   std::mt19937_64 rng{options.seed + thread_id};
   thread_state state(
     files,
+    options.memsize,
     options.submission_queue_length,
     n_bytes_per_thread,
     options.block_size,
