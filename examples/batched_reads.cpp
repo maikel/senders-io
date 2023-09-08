@@ -211,10 +211,22 @@ struct program_options {
         seed = std::stoi(optarg);
         break;
 
-      case 's':
-        n_total_bytes = std::stoull(optarg);
+      case 's': {
+        std::string arg{optarg};
+        std::size_t pos = 0;
+        n_total_bytes = std::stoull(arg, &pos);
+        if (pos < arg.size() && std::tolower(arg[pos]) == 'k') {
+          n_total_bytes <<= 10;
+          pos++;
+        } else if (pos < arg.size() && std::tolower(arg[pos]) == 'm') {
+          n_total_bytes <<= 20;
+          pos++;
+        } else if (pos < arg.size() && std::tolower(arg[pos]) == 'g') {
+          n_total_bytes <<= 30;
+          pos++;
+        }
         n_total_bytes += (block_size - n_total_bytes % block_size);
-        break;
+      } break;
 
       case 't':
         nthreads = std::stoi(optarg);
