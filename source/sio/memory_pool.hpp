@@ -259,7 +259,9 @@ namespace sio {
 
   template <class Receiver>
   void deallocate_operation<Receiver>::start(stdexec::start_t) noexcept {
-    destroy_(pointer_);
+    if (destroy_) {
+      destroy_(pointer_);
+    }
     auto receiver = static_cast<Receiver&&>(receiver_);
     pool_->reclaim_memory(pointer_);
     stdexec::set_value(static_cast<Receiver&&>(receiver));
