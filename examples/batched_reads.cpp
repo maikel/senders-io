@@ -346,14 +346,11 @@ struct counters {
   }
 
   auto load_stats() {
-    auto n_bytes_read_ = std::accumulate(
-      n_bytes_read.begin(), n_bytes_read.end(), std::size_t{}, [](auto a, auto& b) {
-        return a + b.load(std::memory_order_relaxed);
-      });
-    auto n_io_ops_ = std::accumulate(
-      n_io_ops.begin(), n_io_ops.end(), std::size_t{}, [](auto a, auto& b) {
-        return a + b.load(std::memory_order_relaxed);
-      });
+    std::size_t n_bytes_read_ = 0, n_io_ops_ = 0;
+    for (int i = 0; i < n_bytes_read.size(); i += factor) {
+      n_bytes_read_ += n_bytes_read[i].load(std::memory_order_relaxed);
+      n_io_ops_ += n_io_ops[i].load(std::memory_order_relaxed);
+    }
     return std::make_pair(n_bytes_read_, n_io_ops_);
   };
 };
