@@ -28,10 +28,10 @@ namespace sio {
     }
   }
 
-  memory_pool::memory_pool(std::pmr::memory_resource* res) noexcept
+  memory_pool::memory_pool(memory_resource* res) noexcept
     : upstream_{res} {
     if (!upstream_) {
-      upstream_ = std::pmr::get_default_resource();
+      upstream_ = get_default_resource();
     }
   }
 
