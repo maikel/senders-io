@@ -40,6 +40,33 @@ inline constexpr std::size_t hardware_destructive_interference_size = 2 * sizeof
 
 #include <getopt.h>
 
+struct monotonic_buffer_resource : sio::memory_resource {
+  monotonic_buffer_resource(void* buffer, std::size_t size) noexcept
+    : memory_resource()
+    , buffer_{buffer}
+    , size_{size} {
+  }
+
+  void* buffer_;
+  std::size_t size_;
+
+  bool do_is_equal(const sio::memory_resource& other) const noexcept override {
+    return this == &other;
+  }
+
+  void* do_allocate(std::size_t bytes, std::size_t alignment) noexcept override {
+    void* ptr = std::align(alignment, bytes, buffer_, size_);
+    if (ptr && bytes <= size_) {
+      size_ -= bytes;
+      buffer_ = static_cast<char*>(buffer_) + bytes;
+    }
+    return ptr;
+  }
+
+  void do_deallocate(void* ptr, std::size_t bytes, std::size_t alignment) noexcept override {
+  }
+};
+
 void throw_errno_if(bool condition, const std::string& msg) {
   if (condition) {
     throw std::system_error{errno, std::system_category(), msg};
@@ -265,7 +292,7 @@ struct thread_state {
     std::mt19937_64& rng)
     : context{iodepth}
     , buffer(2 * iodepth * (1 << 10))
-    , upstream{buffer.data(), buffer.size(), never_alloc} {
+    , upstream{(void*) buffer.data(), buffer.size()} {
     read_n_bytes /= files.size();
     read_n_bytes += (block_size - read_n_bytes % block_size);
     for (const file_options& fopts: files) {
@@ -276,8 +303,7 @@ struct thread_state {
   exec::io_uring_context context{};
   std::vector<file_state> files{};
   std::vector<std::byte> buffer{};
-  std::pmr::memory_resource* never_alloc = std::pmr::null_memory_resource();
-  std::pmr::monotonic_buffer_resource upstream;
+  monotonic_buffer_resource upstream;
   sio::memory_pool pool{&upstream};
 };
 
@@ -350,7 +376,6 @@ auto read_batched(
 
 void run_io_uring(
   const int thread_id,
-  std::latch& barrier,
   const program_options& options,
   std::span<const file_options> files,
   const std::size_t n_bytes_per_thread,
@@ -375,7 +400,6 @@ void run_io_uring(
         return read_batched(file.stream, file.buffers, file.offsets, allocator, stats, thread_id);
       }) //
     | sio::ignore_all();
-  barrier.arrive_and_wait();
   stdexec::sync_wait(exec::when_any(std::move(read_sender), state.context.run()));
   std::scoped_lock lock{stats.mtx};
   stats.n_completions += 1;
@@ -440,7 +464,6 @@ int main(int argc, char* argv[]) {
   program_options options(argc, argv);
   // libc++ has no jthread yet
   std::vector<std::thread> threads{};
-  std::latch barrier{options.nthreads + 1};
   counters statistics{options.nthreads};
   int n_files_per_thread = options.files.size() / options.nthreads;
   if (n_files_per_thread < 1) {
@@ -456,16 +479,9 @@ int main(int argc, char* argv[]) {
       files = files.subspan(i * n_files_per_thread, n_files_per_thread);
     }
     threads.emplace_back(
-      run_io_uring,
-      i,
-      std::ref(barrier),
-      std::ref(options),
-      files,
-      n_bytes_per_thread,
-      std::ref(statistics));
+      run_io_uring, i, std::ref(options), files, n_bytes_per_thread, std::ref(statistics));
   }
 
-  barrier.arrive_and_wait();
   print_statistics(options, statistics);
 
   for (std::thread& t: threads) {

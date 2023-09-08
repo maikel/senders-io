@@ -18,7 +18,6 @@
 #include <array>
 #include <atomic>
 #include <cstring>
-#include <memory_resource>
 #include <mutex>
 #include <span>
 #include <system_error>
@@ -33,6 +32,61 @@
 #include <exec/finally.hpp>
 
 namespace sio {
+  class memory_resource {
+    static constexpr size_t _S_max_align = alignof(max_align_t);
+
+   public:
+    memory_resource() = default;
+    memory_resource(const memory_resource&) = default;
+    virtual ~memory_resource() = default;
+
+    memory_resource& operator=(const memory_resource&) = default;
+
+    [[nodiscard]] void* allocate(size_t __bytes, size_t __alignment = _S_max_align) noexcept {
+      void* ptr = do_allocate(__bytes, __alignment);
+      if (ptr) {
+        return ::operator new(__bytes, do_allocate(__bytes, __alignment));
+      }
+      return nullptr;
+    }
+
+    void deallocate(void* __p, size_t __bytes, size_t __alignment = _S_max_align) noexcept {
+      return do_deallocate(__p, __bytes, __alignment);
+    }
+
+    [[nodiscard]] bool is_equal(const memory_resource& __other) const noexcept {
+      return do_is_equal(__other);
+    }
+
+   private:
+    virtual void* do_allocate(size_t __bytes, size_t __alignment) noexcept = 0;
+
+    virtual void do_deallocate(void* __p, size_t __bytes, size_t __alignment) noexcept = 0;
+
+    virtual bool do_is_equal(const memory_resource& __other) const noexcept = 0;
+  };
+
+  inline memory_resource* get_default_resource() noexcept {
+    struct type : memory_resource {
+      type() = default;
+
+      void* do_allocate(size_t __bytes, size_t __alignment) noexcept override {
+        return ::operator new(__bytes, std::align_val_t(__alignment));
+      }
+
+      void do_deallocate(void* __p, size_t, size_t) noexcept override {
+        ::operator delete(__p);
+      }
+
+      bool do_is_equal(const memory_resource& __other) const noexcept override {
+        return &__other == this;
+      }
+    };
+
+    static type res{};
+    return &res;
+  }
+
   class memory_pool;
 
   struct memory_block {
@@ -155,7 +209,7 @@ namespace sio {
     template <class Receiver>
     friend struct deallocate_operation;
 
-    std::pmr::memory_resource* upstream_{};
+    memory_resource* upstream_{};
     std::mutex mutex_{};
     std::array<void*, 32> block_lists_{};
     std::array<intrusive_list<&allocate_operation_base::next_, &allocate_operation_base::prev_>, 32>
@@ -164,8 +218,7 @@ namespace sio {
     void reclaim_memory(void* ptr) noexcept;
 
    public:
-    explicit memory_pool(
-      std::pmr::memory_resource* res = std::pmr::get_default_resource()) noexcept;
+    explicit memory_pool(memory_resource* res = get_default_resource()) noexcept;
     memory_pool(const memory_pool&) = delete;
     memory_pool(memory_pool&&) = delete;
     memory_pool& operator=(const memory_pool&) = delete;
@@ -183,9 +236,8 @@ namespace sio {
     void* block_ptr = pool_->block_lists_[index_];
     void* buffer = block_ptr;
     if (!buffer) {
-      try {
-        buffer = pool_->upstream_->allocate(1 << (index_ + 1));
-      } catch (std::bad_alloc&) {
+      buffer = pool_->upstream_->allocate(1 << (index_ + 1));
+      if (!buffer) {
         pool_->pending_allocation_[index_].push_back(this);
         stop_callback_.emplace(
           stdexec::get_stop_token(stdexec::get_env(receiver_)), on_receiver_stop{this});
