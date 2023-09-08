@@ -438,8 +438,8 @@ void print_statistics(const program_options& options, counters& statistics) {
     auto now = std::chrono::steady_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(now - start);
     auto [n_bytes_read, n_io_ops] = statistics.load_stats();
-    auto n_iops = n_io_ops * std::nano::den / elapsed.count();
-    auto n_bytes = n_bytes_read * std::nano::den / elapsed.count();
+    std::size_t n_iops = n_io_ops * 1.0 * std::nano::den / elapsed.count();
+    std::size_t n_bytes = n_bytes_read * 1.0 * std::nano::den / elapsed.count();
     auto progress = n_bytes_read * 100 / options.n_total_bytes;
     std::cout << "\rRead " << n_io_ops << " blocks "
               << "(" << progress << "%) of size " << options.block_size << " bytes in time ";
@@ -450,8 +450,8 @@ void print_statistics(const program_options& options, counters& statistics) {
   auto now = std::chrono::steady_clock::now();
   auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(now - start);
   auto [n_bytes_read, n_io_ops] = statistics.load_stats();
-  auto n_iops = n_io_ops * std::nano::den / elapsed.count();
-  auto n_bytes = n_bytes_read * std::nano::den / elapsed.count();
+  std::size_t n_iops = n_io_ops * 1.0 * std::nano::den / elapsed.count();
+  std::size_t n_bytes = n_bytes_read * 1.0 * std::nano::den / elapsed.count();
   auto progress = n_bytes_read * 100 / options.n_total_bytes;
   std::cout << "\rRead " << n_io_ops << " blocks "
             << "(" << progress << "%) of size " << options.block_size << " bytes in time ";
