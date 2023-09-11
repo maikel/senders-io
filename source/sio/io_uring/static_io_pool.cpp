@@ -1,6 +1,6 @@
 #include "./static_io_pool.hpp"
 
-namespace sio {
+namespace sio::io_uring {
   inline constexpr const int no_thread_context = -1;
 
   thread_local int this_thread_context = no_thread_context;
@@ -18,7 +18,7 @@ namespace sio {
     }
   }
 
-  void static_io_pool::submit(exec::__io_uring::__task* task) noexcept {
+  bool static_io_pool::submit(exec::__io_uring::__task* task) noexcept {
     std::size_t current_context = 0;
     if (this_thread_context == no_thread_context) {
       current_context = current_context_.fetch_add(1, std::memory_order_relaxed) % contexts_.size();
@@ -26,8 +26,24 @@ namespace sio {
       current_context = this_thread_context;
     }
     exec::io_uring_context& context = contexts_[current_context];
-    context.submit(task);
+    auto rc = context.submit(task);
     context.wakeup();
+    return rc;
+  }
+
+  void static_io_pool::wakeup() noexcept {
+  }
+
+  bool static_io_pool::stop_requested() const noexcept {
+    return stop_source_.stop_requested();
+  }
+
+  void static_io_pool::request_stop() noexcept {
+    stop_source_.request_stop();
+  }
+
+  stdexec::in_place_stop_token static_io_pool::get_stop_token() const noexcept {
+    return stop_source_.get_token();
   }
 
   std::span<std::thread> static_io_pool::threads() noexcept {
