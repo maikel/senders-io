@@ -35,27 +35,293 @@
 #include <sys/uio.h>
 
 namespace sio::io_uring {
-  struct env {
-    exec::io_uring_scheduler scheduler;
+  using exec::__io_uring::__task;
+  using exec::__io_uring::__task_vtable;
 
-    friend exec::io_uring_scheduler tag_invoke(
+  template <class Op>
+  concept io_task = //
+    requires(Op& op, ::io_uring_sqe& sqe, const ::io_uring_cqe& cqe) {
+      { op.context() } noexcept;
+      { op.ready() } noexcept -> std::convertible_to<bool>;
+      { op.submit(sqe) } noexcept;
+      { op.complete(cqe) } noexcept;
+    };
+
+  template <class Op>
+  concept stoppable_task = //
+    io_task<Op> &&         //
+    requires(Op& op) {
+      {
+        ((Op&&) op).receiver()
+      } noexcept -> stdexec::receiver_of<stdexec::completion_signatures<stdexec::set_stopped_t()>>;
+    };
+
+  template <stoppable_task Op>
+  using stoppable_task_receiver_of_t = stdexec::__decay_t<decltype(std::declval<Op&>().receiver())>;
+
+  template <io_task Base>
+  struct io_task_facade : __task {
+    static bool ready_(__task* pointer) noexcept {
+      io_task_facade* self = static_cast<io_task_facade*>(pointer);
+      return self->base_.ready();
+    }
+
+    static void submit_(__task* pointer, ::io_uring_sqe& sqe) noexcept {
+      io_task_facade* self = static_cast<io_task_facade*>(pointer);
+      self->base_.submit(sqe);
+    }
+
+    static void complete_(__task* pointer, const ::io_uring_cqe& cqe) noexcept {
+      io_task_facade* self = static_cast<io_task_facade*>(pointer);
+      self->base_.complete(cqe);
+    }
+
+    static constexpr __task_vtable vtable{&ready_, &submit_, &complete_};
+
+    template <class... Args>
+      requires stdexec::constructible_from<Base, std::in_place_t, __task*, Args...>
+    io_task_facade(std::in_place_t, Args&&... args) noexcept(
+      nothrow_constructible_from<Base, __task*, Args...>)
+      : __task{vtable}
+      , base_(std::in_place, static_cast<__task*>(this), static_cast<Args&&>(args)...) {
+    }
+
+    template <class... Args>
+      requires stdexec::constructible_from<Base, Args...>
+    io_task_facade(std::in_place_t, Args&&... args) noexcept(
+      nothrow_constructible_from<Base, Args...>)
+      : __task{vtable}
+      , base_(static_cast<Args&&>(args)...) {
+    }
+
+    Base& base() noexcept {
+      return base_;
+    }
+
+   private:
+    Base base_;
+
+    STDEXEC_CPO_ACCESS(stdexec::start_t);
+
+    STDEXEC_DEFINE_CUSTOM(void start)(this io_task_facade& self, stdexec::start_t) noexcept {
+      auto& context = self.base_.context();
+      if (context.submit(&self)) {
+        context.wakeup();
+      }
+    }
+  };
+
+  template <class Base>
+  struct stop_operation {
+    class type : public __task {
+      Base* op_;
+     public:
+      static bool ready_(__task*) noexcept {
+        return false;
+      }
+
+      static void submit_(__task* pointer, ::io_uring_sqe& sqe) noexcept {
+        type* self = static_cast<type*>(pointer);
+        self->submit(sqe);
+      }
+
+      static void complete_(__task* pointer, const ::io_uring_cqe& cqe) noexcept {
+        type* self = static_cast<type*>(pointer);
+        self->complete(cqe);
+      }
+
+      void submit(::io_uring_sqe& sqe) noexcept {
+#ifdef STDEXEC_HAS_IO_URING_ASYNC_CANCELLATION
+        if constexpr (requires(Base* op, ::io_uring_sqe& sqe) { op->submit_stop(sqe); }) {
+          op_->submit_stop(sqe);
+        } else {
+          sqe = ::io_uring_sqe{
+            .opcode = IORING_OP_ASYNC_CANCEL,          //
+            .addr = std::bit_cast<__u64>(op_->parent_) //
+          };
+        }
+#else
+        op_->submit_stop(sqe);
+#endif
+      }
+
+      void complete(const ::io_uring_cqe&) noexcept {
+        if (op_->n_ops_.fetch_sub(1, std::memory_order_relaxed) == 1) {
+          op_->on_context_stop_.reset();
+          op_->on_receiver_stop_.reset();
+          stdexec::set_stopped(((Base&&) *op_).receiver());
+        }
+      }
+
+      static constexpr __task_vtable vtable{&ready_, &submit_, &complete_};
+
+      explicit type(Base* op) noexcept
+        : __task(vtable)
+        , op_{op} {
+      }
+
+      void start() noexcept {
+        int expected = 1;
+        if (op_->n_ops_.compare_exchange_strong(expected, 2, std::memory_order_relaxed)) {
+          if (op_->context().submit(this)) {
+            op_->context().wakeup();
+          }
+        }
+      }
+    };
+  };
+
+  template <class Base, bool False>
+  struct impl_base {
+    __task* parent_;
+    Base base_;
+
+    template <class... Args>
+    impl_base(__task* parent, std::in_place_t, Args&&... args) noexcept(
+      nothrow_constructible_from<Base, Args...>)
+      : parent_{parent}
+      , base_((Args&&) args...) {
+    }
+  };
+
+  template <class Base>
+  struct impl_base<Base, true> {
+    __task* parent_;
+    Base base_;
+
+    template <class... Args>
+    impl_base(__task* parent, std::in_place_t, Args&&... args) noexcept(
+      nothrow_constructible_from<Base, Args...>)
+      : parent_{parent}
+      , base_((Args&&) args...) {
+    }
+
+    void submit_stop(::io_uring_sqe& sqe) noexcept {
+      base_.submit_stop(sqe);
+    }
+  };
+
+  template <stoppable_task Base>
+  struct stoppable_task_facade {
+    using Receiver = stoppable_task_receiver_of_t<Base>;
+    using Context = decltype(std::declval<Base&>().context());
+
+    template <class Ty>
+    static constexpr bool has_submit_stop_v = requires(Ty& base, ::io_uring_sqe& sqe) {
+      base.submit_stop(sqe);
+    };
+
+    using base_t = impl_base<Base, has_submit_stop_v<Base>>;
+
+    struct impl : base_t {
+      struct stop_callback {
+        impl* self_;
+
+        void operator()() noexcept {
+          self_->stop_operation_.start();
+        }
+      };
+
+      using on_context_stop_t = std::optional<stdexec::in_place_stop_callback<stop_callback>>;
+      using on_receiver_stop_t = std::optional<typename stdexec::stop_token_of_t<
+        stdexec::env_of_t<Receiver>&>::template callback_type<stop_callback>>;
+
+      typename stop_operation<impl>::type stop_operation_;
+      std::atomic<int> n_ops_{0};
+      on_context_stop_t on_context_stop_{};
+      on_receiver_stop_t on_receiver_stop_{};
+
+      template <class... Args>
+        requires constructible_from<Base, Args...>
+      impl(std::in_place_t, __task* parent, Args&&... args) noexcept(
+        nothrow_constructible_from<Base, Args...>)
+        : base_t(parent, std::in_place, (Args&&) args...)
+        , stop_operation_{this} {
+      }
+
+      Context& context() noexcept {
+        return this->base_.context();
+      }
+
+      Receiver& receiver() & noexcept {
+        return this->base_.receiver();
+      }
+
+      Receiver&& receiver() && noexcept {
+        return (Receiver&&) this->base_.receiver();
+      }
+
+      bool ready() const noexcept {
+        return this->base_.ready();
+      }
+
+      void submit(::io_uring_sqe& sqe) noexcept {
+        [[maybe_unused]] int prev = n_ops_.fetch_add(1, std::memory_order_relaxed);
+        STDEXEC_ASSERT(prev == 0);
+        Context& context = this->base_.context();
+        Receiver& receiver = this->base_.receiver();
+        on_context_stop_.emplace(context.get_stop_token(), stop_callback{this});
+        on_receiver_stop_.emplace(
+          stdexec::get_stop_token(stdexec::get_env(receiver)), stop_callback{this});
+        this->base_.submit(sqe);
+      }
+
+      void complete(const ::io_uring_cqe& cqe) noexcept {
+        if (n_ops_.fetch_sub(1, std::memory_order_relaxed) == 1) {
+          on_context_stop_.reset();
+          on_receiver_stop_.reset();
+          Receiver& receiver = this->base_.receiver();
+          Context& context = this->base_.context();
+          auto token = stdexec::get_stop_token(stdexec::get_env(receiver));
+          if (cqe.res == -ECANCELED || context.stop_requested() || token.stop_requested()) {
+            stdexec::set_stopped((Receiver&&) receiver);
+          } else {
+            this->base_.complete(cqe);
+          }
+        }
+      }
+    };
+
+    using type = io_task_facade<impl>;
+  };
+
+  template <class Base>
+  using stoppable_task_facade_t = typename stoppable_task_facade<Base>::type;
+
+  template <class Context, class Receiver>
+  struct stoppable_op_base {
+    Context& context_;
+    Receiver receiver_;
+
+    Receiver& receiver() & noexcept {
+      return receiver_;
+    }
+
+    Receiver&& receiver() && noexcept {
+      return static_cast<Receiver&&>(receiver_);
+    }
+
+    Context& context() noexcept {
+      return context_;
+    }
+  };
+
+  template <class Context>
+  struct env {
+    Context* context_;
+
+    friend auto tag_invoke(
       stdexec::get_completion_scheduler_t<stdexec::set_value_t>,
       const env& self) noexcept {
-      return self.scheduler;
+      return self.context_->get_scheduler();
     }
   };
 
   struct close_submission {
-    exec::io_uring_context& context_;
     int fd_;
 
-    close_submission(exec::io_uring_context& context, int fd) noexcept
-      : context_{context}
-      , fd_{fd} {
-    }
-
-    exec::io_uring_context& context() const noexcept {
-      return context_;
+    close_submission(int fd) noexcept
+      : fd_{fd} {
     }
 
     static constexpr std::false_type ready() noexcept {
@@ -65,70 +331,64 @@ namespace sio::io_uring {
     void submit(::io_uring_sqe& sqe) const noexcept;
   };
 
-  template <class Receiver>
-  struct close_operation_base : close_submission {
-    [[no_unique_address]] Receiver receiver_;
-
-    close_operation_base(exec::io_uring_context& context, Receiver receiver, int fd)
-      : close_submission{context, fd}
-      , receiver_{static_cast<Receiver&&>(receiver)} {
+  template <class Context, class Receiver>
+  struct close_operation_base
+    : stoppable_op_base<Context, Receiver>
+    , close_submission {
+    close_operation_base(Context& context, Receiver receiver, int fd)
+      : stoppable_op_base<Context, Receiver>{context, static_cast<Receiver&&>(receiver)}
+      , close_submission{fd} {
     }
 
     void complete(const ::io_uring_cqe& cqe) noexcept {
       if (cqe.res == 0) {
-        stdexec::set_value(static_cast<Receiver&&>(receiver_));
+        stdexec::set_value(static_cast<close_operation_base&&>(*this).receiver());
       } else {
         SIO_ASSERT(cqe.res < 0);
         stdexec::set_error(
-          static_cast<Receiver&&>(receiver_), std::error_code(-cqe.res, std::system_category()));
+          static_cast<close_operation_base&&>(*this).receiver(),
+          std::error_code(-cqe.res, std::system_category()));
       }
     }
   };
 
-  template <class Tp>
-  using io_task_facade = exec::__io_uring::__io_task_facade<Tp>;
+  template <class Context, class Receiver>
+  using close_operation = io_task_facade<close_operation_base<Context, Receiver>>;
 
-  template <class Tp>
-  using stoppable_op_base = exec::__io_uring::__stoppable_op_base<Tp>;
-
-  template <class Tp>
-  using stoppable_task_facade = exec::__io_uring::__stoppable_task_facade_t<Tp>;
-
-  template <class Receiver>
-  using close_operation = io_task_facade<close_operation_base<Receiver>>;
-
+  template <class Context>
   struct close_sender {
     using completion_signatures = stdexec::completion_signatures<
       stdexec::set_value_t(),
       stdexec::set_error_t(std::error_code),
       stdexec::set_stopped_t()>;
 
-    exec::io_uring_context* context_;
+    Context* context_;
     int fd_;
 
     template <class Receiver>
-    close_operation<Receiver> connect(stdexec::connect_t, Receiver rcvr) const noexcept {
-      return close_operation<Receiver>{
+    close_operation<Context, Receiver> connect(stdexec::connect_t, Receiver rcvr) const noexcept {
+      return close_operation<Context, Receiver>{
         std::in_place, *context_, static_cast<Receiver&&>(rcvr), fd_};
     }
 
-    env get_env(stdexec::get_env_t) const noexcept {
-      return {context_->get_scheduler()};
+    env<Context> get_env(stdexec::get_env_t) const noexcept {
+      return {context_};
     }
   };
 
-  struct native_fd_handle {
-    exec::io_uring_context* context_{};
+  template <class Context>
+  struct basic_native_fd_handle {
+    Context* context_{};
     int fd_{-1};
 
-    native_fd_handle() noexcept = default;
+    basic_native_fd_handle() noexcept = default;
 
-    explicit native_fd_handle(exec::io_uring_context* context, int fd) noexcept
+    explicit basic_native_fd_handle(Context* context, int fd) noexcept
       : context_{context}
       , fd_{fd} {
     }
 
-    explicit native_fd_handle(exec::io_uring_context& context, int fd) noexcept
+    explicit basic_native_fd_handle(Context& context, int fd) noexcept
       : context_{&context}
       , fd_{fd} {
     }
@@ -137,10 +397,12 @@ namespace sio::io_uring {
       return fd_;
     }
 
-    close_sender close(async::close_t) const noexcept {
+    close_sender<Context> close(async::close_t) const noexcept {
       return {context_, fd_};
     }
   };
+
+  using native_fd_handle = basic_native_fd_handle<exec::io_uring_context>;
 
   struct open_data {
     std::filesystem::path path_;
@@ -163,50 +425,52 @@ namespace sio::io_uring {
     void submit(::io_uring_sqe& sqe) const noexcept;
   };
 
-  template <class Receiver>
+  template <class Context, class Receiver>
   struct open_operation_base
-    : stoppable_op_base<Receiver>
+    : stoppable_op_base<Context, Receiver>
     , open_submission {
 
-    open_operation_base(open_data data, exec::io_uring_context& context, Receiver&& receiver)
-      : stoppable_op_base<Receiver>{context, static_cast<Receiver&&>(receiver)}
+    open_operation_base(open_data data, Context& context, Receiver&& receiver)
+      : stoppable_op_base<Context, Receiver>{context, static_cast<Receiver&&>(receiver)}
       , open_submission{static_cast<open_data&&>(data)} {
     }
 
     void complete(const ::io_uring_cqe& cqe) noexcept {
       if (cqe.res >= 0) {
         stdexec::set_value(
-          static_cast<Receiver&&>(this->__receiver_), native_fd_handle{&this->context(), cqe.res});
+          static_cast<open_operation_base&&>(*this).receiver(),
+          basic_native_fd_handle{&this->context(), cqe.res});
       } else {
         STDEXEC_ASSERT(cqe.res < 0);
         stdexec::set_error(
-          static_cast<Receiver&&>(this->__receiver_),
+          static_cast<open_operation_base&&>(*this).receiver(),
           std::error_code(-cqe.res, std::system_category()));
       }
     }
   };
 
-  template <class Receiver>
-  using open_operation = stoppable_task_facade<open_operation_base<Receiver>>;
+  template <class Context, class Receiver>
+  using open_operation = stoppable_task_facade_t<open_operation_base<Context, Receiver>>;
 
+  template <class Context>
   struct open_sender {
     using is_sender = void;
 
     using completion_signatures = stdexec::completion_signatures<
-      stdexec::set_value_t(native_fd_handle),
+      stdexec::set_value_t(basic_native_fd_handle<Context>),
       stdexec::set_error_t(std::error_code),
       stdexec::set_stopped_t()>;
 
-    exec::io_uring_context* context_;
+    Context* context_;
     open_data data_;
 
-    explicit open_sender(exec::io_uring_context& context, open_data data) noexcept
+    explicit open_sender(Context& context, open_data data) noexcept
       : context_{&context}
       , data_{static_cast<open_data&&>(data)} {
     }
 
     template <decays_to<open_sender> Self, stdexec::receiver_of<completion_signatures> Receiver>
-    static open_operation<Receiver>
+    static open_operation<Context, Receiver>
       connect(Self&& self, stdexec::connect_t, Receiver rcvr) noexcept {
       return {
         std::in_place,
@@ -215,8 +479,8 @@ namespace sio::io_uring {
         static_cast<Receiver&&>(rcvr)};
     }
 
-    env get_env(stdexec::get_env_t) const noexcept {
-      return {context_->get_scheduler()};
+    env<Context> get_env(stdexec::get_env_t) const noexcept {
+      return env<Context>{context_};
     }
   };
 
@@ -239,17 +503,17 @@ namespace sio::io_uring {
     void submit(::io_uring_sqe& sqe) const noexcept;
   };
 
-  template <class Receiver>
+  template <class Context, class Receiver>
   struct read_operation_base
-    : stoppable_op_base<Receiver>
+    : stoppable_op_base<Context, Receiver>
     , read_submission {
     read_operation_base(
-      exec::io_uring_context& context,
+      Context& context,
       std::variant<::iovec, std::span<::iovec>> data,
       int fd,
       ::off_t offset,
       Receiver&& receiver) noexcept
-      : stoppable_op_base<Receiver>{context, static_cast<Receiver&&>(receiver)}
+      : stoppable_op_base<Context, Receiver>{context, static_cast<Receiver&&>(receiver)}
       , read_submission{data, fd, offset} {
     }
 
@@ -260,15 +524,16 @@ namespace sio::io_uring {
       } else {
         STDEXEC_ASSERT(cqe.res < 0);
         stdexec::set_error(
-          static_cast<Receiver&&>(this->__receiver_),
+          static_cast<read_operation_base&&>(*this).receiver(),
           std::error_code(-cqe.res, std::system_category()));
       }
     }
   };
 
-  template <class Receiver>
-  using read_operation = stoppable_task_facade<read_operation_base<Receiver>>;
+  template <class Context, class Receiver>
+  using read_operation = stoppable_task_facade_t<read_operation_base<Context, Receiver>>;
 
+  template <class Context>
   struct read_sender {
     using is_sender = void;
 
@@ -277,27 +542,19 @@ namespace sio::io_uring {
       stdexec::set_error_t(std::error_code),
       stdexec::set_stopped_t()>;
 
-    exec::io_uring_context* context_;
+    Context* context_;
     std::variant<::iovec, std::span<::iovec>> buffers_;
     int fd_;
     ::off_t offset_;
 
-    read_sender(
-      exec::io_uring_context& context,
-      std::span<::iovec> buffers,
-      int fd,
-      ::off_t offset = 0) noexcept
+    read_sender(Context& context, std::span<::iovec> buffers, int fd, ::off_t offset = 0) noexcept
       : context_{&context}
       , buffers_{buffers}
       , fd_{fd}
       , offset_{offset} {
     }
 
-    read_sender(
-      exec::io_uring_context& context,
-      ::iovec buffers,
-      int fd,
-      ::off_t offset = 0) noexcept
+    read_sender(Context& context, ::iovec buffers, int fd, ::off_t offset = 0) noexcept
       : context_{&context}
       , buffers_{buffers}
       , fd_{fd}
@@ -305,13 +562,13 @@ namespace sio::io_uring {
     }
 
     template <stdexec::receiver_of<completion_signatures> Receiver>
-    read_operation<Receiver> connect(stdexec::connect_t, Receiver rcvr) const noexcept {
-      return read_operation<Receiver>{
+    read_operation<Context, Receiver> connect(stdexec::connect_t, Receiver rcvr) const noexcept {
+      return read_operation<Context, Receiver>{
         std::in_place, *context_, buffers_, fd_, offset_, static_cast<Receiver&&>(rcvr)};
     }
 
-    env get_env(stdexec::get_env_t) const noexcept {
-      return {context_->get_scheduler()};
+    env<Context> get_env(stdexec::get_env_t) const noexcept {
+      return {context_};
     }
   };
 
@@ -334,17 +591,17 @@ namespace sio::io_uring {
     void submit(::io_uring_sqe& sqe) const noexcept;
   };
 
-  template <class Receiver>
+  template <class Context, class Receiver>
   struct write_operation_base
-    : stoppable_op_base<Receiver>
+    : stoppable_op_base<Context, Receiver>
     , write_submission {
     write_operation_base(
-      exec::io_uring_context& context,
+      Context& context,
       std::variant<::iovec, std::span<::iovec>> data,
       int fd,
       ::off_t offset,
       Receiver&& receiver)
-      : stoppable_op_base<Receiver>{context, static_cast<Receiver&&>(receiver)}
+      : stoppable_op_base<Context, Receiver>{context, static_cast<Receiver&&>(receiver)}
       , write_submission(data, fd, offset) {
     }
 
@@ -361,9 +618,10 @@ namespace sio::io_uring {
     }
   };
 
-  template <class Receiver>
-  using write_operation = stoppable_task_facade<write_operation_base<Receiver>>;
+  template <class Context, class Receiver>
+  using write_operation = stoppable_task_facade_t<write_operation_base<Context, Receiver>>;
 
+  template <class Context>
   struct write_sender {
     using is_sender = void;
 
@@ -372,13 +630,13 @@ namespace sio::io_uring {
       stdexec::set_error_t(std::error_code),
       stdexec::set_stopped_t()>;
 
-    exec::io_uring_context* context_;
+    Context* context_;
     std::variant<::iovec, std::span<::iovec>> buffers_;
     int fd_;
     ::off_t offset_{-1};
 
     explicit write_sender(
-      exec::io_uring_context& context,
+      Context& context,
       std::span<::iovec> data,
       int fd,
       ::off_t offset = -1) noexcept
@@ -388,11 +646,7 @@ namespace sio::io_uring {
       , offset_{offset} {
     }
 
-    explicit write_sender(
-      exec::io_uring_context& context,
-      ::iovec data,
-      int fd,
-      ::off_t offset = -1) noexcept
+    explicit write_sender(Context& context, ::iovec data, int fd, ::off_t offset = -1) noexcept
       : context_{&context}
       , buffers_{data}
       , fd_{fd}
@@ -400,35 +654,36 @@ namespace sio::io_uring {
     }
 
     template <stdexec::receiver_of<completion_signatures> Receiver>
-    write_operation<Receiver> connect(stdexec::connect_t, Receiver rcvr) const noexcept {
-      return write_operation<Receiver>{
+    write_operation<Context, Receiver> connect(stdexec::connect_t, Receiver rcvr) const noexcept {
+      return write_operation<Context, Receiver>{
         std::in_place, *context_, buffers_, fd_, offset_, static_cast<Receiver&&>(rcvr)};
     }
 
-    env get_env(stdexec::get_env_t) const noexcept {
-      return {context_->get_scheduler()};
+    env<Context> get_env(stdexec::get_env_t) const noexcept {
+      return {context_};
     }
   };
 
-  struct byte_stream : native_fd_handle {
+  template <class Context>
+  struct basic_byte_stream : basic_native_fd_handle<Context> {
     using buffer_type = std::span<std::byte>;
     using buffers_type = std::span<buffer_type>;
     using const_buffer_type = std::span<const std::byte>;
     using const_buffers_type = std::span<const_buffer_type>;
     using extent_type = ::off_t;
 
-    using native_fd_handle::native_fd_handle;
+    using basic_native_fd_handle<Context>::basic_native_fd_handle;
 
-    explicit byte_stream(const native_fd_handle& fd) noexcept
-      : native_fd_handle{fd} {
+    explicit basic_byte_stream(const basic_native_fd_handle<Context>& fd) noexcept
+      : basic_native_fd_handle<Context>(fd) {
     }
 
-    write_sender write_some(async::write_some_t, const_buffers_type data) const noexcept {
+    write_sender<Context> write_some(async::write_some_t, const_buffers_type data) const noexcept {
       std::span<::iovec> buffers{reinterpret_cast<::iovec*>(data.data()), data.size()};
       return write_sender(*this->context_, buffers, this->fd_);
     }
 
-    write_sender write_some(async::write_some_t, const_buffer_type data) const noexcept {
+    write_sender<Context> write_some(async::write_some_t, const_buffer_type data) const noexcept {
       ::iovec buffer = {
         .iov_base = const_cast<void*>(static_cast<const void*>(data.data())),
         .iov_len = data.size()};
@@ -443,12 +698,12 @@ namespace sio::io_uring {
       return reduce(buffered_sequence{write_some(async::write_some, data)}, 0ull);
     }
 
-    read_sender read_some(async::read_some_t, buffers_type data) const noexcept {
+    read_sender<Context> read_some(async::read_some_t, buffers_type data) const noexcept {
       std::span<::iovec> buffers{reinterpret_cast<::iovec*>(data.data()), data.size()};
       return read_sender(*this->context_, buffers, this->fd_);
     }
 
-    read_sender read_some(async::read_some_t, buffer_type data) const noexcept {
+    read_sender<Context> read_some(async::read_some_t, buffer_type data) const noexcept {
       ::iovec buffer = {.iov_base = data.data(), .iov_len = data.size()};
       return read_sender(*this->context_, buffer, this->fd_);
     }
@@ -462,7 +717,10 @@ namespace sio::io_uring {
     }
   };
 
-  struct seekable_byte_stream : byte_stream {
+  using byte_stream = basic_byte_stream<exec::io_uring_context>;
+
+  template <class Context>
+  struct basic_seekable_byte_stream : basic_byte_stream<Context> {
     using buffer_type = std::span<std::byte>;
     using buffers_type = std::span<buffer_type>;
     using const_buffer_type = std::span<const std::byte>;
@@ -470,19 +728,19 @@ namespace sio::io_uring {
     using offset_type = ::off_t;
     using extent_type = ::off_t;
 
-    using byte_stream::byte_stream;
-    using byte_stream::read_some;
-    using byte_stream::read;
-    using byte_stream::write_some;
-    using byte_stream::write;
+    using basic_byte_stream<Context>::basic_byte_stream;
+    using basic_byte_stream<Context>::read_some;
+    using basic_byte_stream<Context>::read;
+    using basic_byte_stream<Context>::write_some;
+    using basic_byte_stream<Context>::write;
 
-    write_sender
+    write_sender<Context>
       write_some(async::write_some_t, const_buffers_type data, extent_type offset) const noexcept {
       std::span<::iovec> buffers{reinterpret_cast<::iovec*>(data.data()), data.size()};
       return write_sender{*this->context_, buffers, this->fd_, offset};
     }
 
-    write_sender
+    write_sender<Context>
       write_some(async::write_some_t, const_buffer_type data, extent_type offset) const noexcept {
       ::iovec buffer = {
         .iov_base = const_cast<void*>(static_cast<const void*>(data.data())),
@@ -490,13 +748,14 @@ namespace sio::io_uring {
       return write_sender{*this->context_, buffer, this->fd_, offset};
     }
 
-    read_sender
+    read_sender<Context>
       read_some(async::read_some_t, buffers_type data, extent_type offset) const noexcept {
       std::span<::iovec> buffers{std::bit_cast<::iovec*>(data.data()), data.size()};
       return read_sender(*this->context_, buffers, this->fd_, offset);
     }
 
-    read_sender read_some(async::read_some_t, buffer_type data, extent_type offset) const noexcept {
+    read_sender<Context>
+      read_some(async::read_some_t, buffer_type data, extent_type offset) const noexcept {
       ::iovec buffer = {.iov_base = data.data(), .iov_len = data.size()};
       return read_sender(*this->context_, buffer, this->fd_, offset);
     }
@@ -518,39 +777,48 @@ namespace sio::io_uring {
     }
   };
 
-  struct path_handle : native_fd_handle {
-    static path_handle current_directory() noexcept {
-      return path_handle{
-        native_fd_handle{nullptr, AT_FDCWD}
+  using seekable_byte_stream = basic_seekable_byte_stream<exec::io_uring_context>;
+
+  template <class Context>
+  struct basic_path_handle : basic_native_fd_handle<Context> {
+    static basic_path_handle<Context> current_directory() noexcept {
+      return basic_path_handle{
+        basic_native_fd_handle<Context>{nullptr, AT_FDCWD}
       };
     }
   };
 
-  struct path_resource {
-    exec::io_uring_context& context_;
+  using path_handle = basic_path_handle<exec::io_uring_context>;
+
+  template <class Context>
+  struct basic_path_resource {
+    Context& context_;
     std::filesystem::path path_;
 
-    explicit path_resource(exec::io_uring_context& context, std::filesystem::path path) noexcept
+    explicit basic_path_resource(Context& context, std::filesystem::path path) noexcept
       : context_{context}
       , path_{static_cast<std::filesystem::path&&>(path)} {
     }
 
     auto open(async::open_t) const {
       open_data data_{path_, AT_FDCWD, O_PATH, 0};
-      return stdexec::then(open_sender{context_, data_}, [](native_fd_handle fd) noexcept {
-        return path_handle{fd};
-      });
+      return stdexec::then(
+        open_sender{context_, data_},
+        [](basic_native_fd_handle<Context> fd) noexcept { return basic_path_handle<Context>{fd}; });
     }
   };
 
-  struct file_resource {
-    exec::io_uring_context& context_;
+  using path_resource = basic_path_resource<exec::io_uring_context>;
+
+  template <class Context>
+  struct basic_file_resource {
+    Context& context_;
     open_data data_;
 
-    explicit file_resource(
-      exec::io_uring_context& context,
+    explicit basic_file_resource(
+      Context& context,
       std::filesystem::path path,
-      path_handle base,
+      basic_path_handle<Context> base,
       async::mode mode,
       async::creation creation,
       async::caching caching) noexcept
@@ -563,17 +831,21 @@ namespace sio::io_uring {
     }
 
     auto open(async::open_t) const noexcept {
-      return stdexec::then(open_sender{context_, data_}, [](native_fd_handle fd) noexcept {
-        return seekable_byte_stream{fd};
-      });
+      return stdexec::then(
+        open_sender{context_, data_}, [](basic_native_fd_handle<Context> fd) noexcept {
+          return basic_seekable_byte_stream<Context>{fd};
+        });
     }
   };
 
-  struct io_scheduler {
-    exec::io_uring_context* context_;
+  using file_resource = basic_file_resource<exec::io_uring_context>;
 
-    using path_type = sio::io_uring::path_resource;
-    using file_type = sio::io_uring::file_resource;
+  template <class Context>
+  struct basic_io_scheduler {
+    Context* context_;
+
+    using path_type = sio::io_uring::basic_path_resource<Context>;
+    using file_type = sio::io_uring::basic_file_resource<Context>;
 
     path_type open_path(async::open_path_t, std::filesystem::path path) const noexcept {
       return path_type(*context_, static_cast<std::filesystem::path&&>(path));
@@ -582,7 +854,7 @@ namespace sio::io_uring {
     file_type open_file(
       async::open_file_t,
       std::filesystem::path path,
-      path_handle base,
+      basic_path_handle<Context> base,
       async::mode mode,
       async::creation creation,
       async::caching caching) const noexcept {
@@ -590,4 +862,6 @@ namespace sio::io_uring {
         *context_, static_cast<std::filesystem::path&&>(path), base, mode, creation, caching};
     }
   };
+
+  using io_scheduler = basic_io_scheduler<exec::io_uring_context>;
 }

@@ -42,7 +42,7 @@ auto echo_input(tcp_socket client) {
 
 int main() {
   exec::io_uring_context context{};
-  auto acceptor = sio::io_uring::acceptor(
+  auto acceptor = sio::io_uring::acceptor<sio::ip::tcp>(
     &context, sio::ip::tcp::v4(), sio::ip::endpoint{sio::ip::address_v4::any(), 1080});
 
   auto accept_connections = sio::async::use_resources(
