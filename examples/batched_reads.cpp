@@ -1,4 +1,5 @@
 #include <sio/io_uring/file_handle.hpp>
+#include <sio/io_uring/static_io_pool.hpp>
 #include <sio/read_batched.hpp>
 #include <sio/sequence/reduce.hpp>
 #include <sio/sequence/iterate.hpp>
@@ -21,6 +22,7 @@
 #include <latch>
 #include <new>
 #include <memory_resource>
+#include <type_traits>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -100,12 +102,13 @@ struct file_options {
   bool use_memfd = false;
 };
 
+template <typename Context>
 struct file_state {
   using stat_type = struct ::stat;
 
   explicit file_state(
     const file_options& fopts,
-    exec::io_uring_context& context,
+    Context& context,
     std::size_t memsize,
     std::size_t readn_n_bytes,
     std::size_t block_size,
@@ -141,8 +144,8 @@ struct file_state {
         throw std::runtime_error{"Unsupported file type"};
       }
     }
-    stream = sio::io_uring::seekable_byte_stream{
-      sio::io_uring::native_fd_handle{context, fd.native_handle()}
+    stream = sio::io_uring::basic_seekable_byte_stream<Context>{
+      sio::io_uring::basic_native_fd_handle<Context>{context, fd.native_handle()}
     };
 
     // Allocate buffers and offsets
@@ -160,7 +163,7 @@ struct file_state {
   }
 
   exec::safe_file_descriptor fd;
-  sio::io_uring::seekable_byte_stream stream;
+  sio::io_uring::basic_seekable_byte_stream<Context> stream;
   std::size_t file_size;
   std::size_t num_blocks;
   std::unique_ptr<std::byte[], aligned_deleter> buffer_storage{};
@@ -186,10 +189,11 @@ struct program_options {
         {    "help",       no_argument, 0, 'h'},
         {    "seed", required_argument, 0, 'r'},
         { "threads", required_argument, 0, 't'},
+        {    "pool",       no_argument, 0, 'p'},
         {         0,                 0, 0,   0}
       };
 
-      const char* short_options = "b:s:m:hr:t:";
+      const char* short_options = "b:s:m:hr:t:p:";
 
       c = getopt_long(argc, argv, short_options, long_options, &option_index);
       if (c == -1)
@@ -198,6 +202,10 @@ struct program_options {
       switch (c) {
       case 'b':
         buffered = true;
+        break;
+      
+      case 'p':
+        use_io_pool = true;
         break;
 
       case 'm':
@@ -299,6 +307,7 @@ Report Bugs:
   std::vector<file_options> files{};
   bool buffered = false;
   std::size_t memsize = 1 << 20;
+  bool use_io_pool = false;
 };
 
 struct thread_state {
@@ -320,8 +329,34 @@ struct thread_state {
     }
   }
 
-  exec::io_uring_context context{};
-  std::vector<file_state> files{};
+  using Context = exec::io_uring_context;
+  using file_state_t = file_state<Context>;
+
+  Context context{};
+  std::vector<file_state_t> files{};
+  std::vector<std::byte> buffer{};
+  monotonic_buffer_resource upstream;
+  sio::memory_pool pool{&upstream};
+};
+
+struct mt_state {
+  explicit mt_state(const program_options& options)
+    : context{options.nthreads, options.submission_queue_length}
+    , buffer(2 * options.submission_queue_length * (1 << 10))
+    , upstream{(void*) buffer.data(), buffer.size()} {
+    std::mt19937_64 rng{options.seed};
+    auto read_n_bytes = options.n_total_bytes / options.files.size();
+    read_n_bytes += (options.block_size - read_n_bytes % options.block_size);
+    for (const file_options& fopts: options.files) {
+      this->files.emplace_back(fopts, context, options.memsize, read_n_bytes, options.block_size, rng, options.buffered);
+    }
+  }
+
+  using Context = sio::io_uring::static_io_pool;
+  using file_state_t = file_state<Context>;
+
+  Context context;
+  std::vector<file_state_t> files{};
   std::vector<std::byte> buffer{};
   monotonic_buffer_resource upstream;
   sio::memory_pool pool{&upstream};
@@ -355,8 +390,9 @@ struct counters {
   };
 };
 
+template <class Stream>
 auto read_with_counter(
-  sio::io_uring::seekable_byte_stream stream,
+  Stream stream,
   std::span<std::byte> buffer,
   ::off_t offset,
   counters& stats,
@@ -406,14 +442,15 @@ void run_io_uring(
     options.block_size,
     options.buffered,
     rng);
+  using file_state_t = decltype(state)::file_state_t;
   namespace stdv = std::views;
   auto file_view =         //
     stdv::all(state.files) //
-    | stdv::transform([](file_state& file) { return std::ref(file); });
+    | stdv::transform([](file_state_t& file) { return std::ref(file); });
   auto read_sender =
     sio::iterate(file_view) //
     | sio::fork()           //
-    | sio::let_value_each([&](file_state& file) {
+    | sio::let_value_each([&](file_state_t& file) {
         sio::memory_pool_allocator<std::byte> allocator{&state.pool};
         return read_batched(file.stream, file.buffers, file.offsets, allocator, stats, thread_id);
       }) //
@@ -421,6 +458,29 @@ void run_io_uring(
   stdexec::sync_wait(exec::when_any(std::move(read_sender), state.context.run()));
   std::scoped_lock lock{stats.mtx};
   stats.n_completions += 1;
+  stats.cv.notify_one();
+}
+
+void run_mt_io_uring(
+  const program_options& options,
+  counters& stats) {
+  mt_state state{options};
+  using file_state_t = decltype(state)::file_state_t;
+  namespace stdv = std::views;
+  auto file_view =         //
+    stdv::all(state.files) //
+    | stdv::transform([](file_state_t& file) { return std::ref(file); });
+  auto read_sender =
+    sio::iterate(file_view) //
+    | sio::fork()           //
+    | sio::let_value_each([&](file_state_t& file) {
+        sio::memory_pool_allocator<std::byte> allocator{&state.pool};
+        return read_batched(file.stream, file.buffers, file.offsets, allocator, stats, 0);
+      }) //
+    | sio::ignore_all();
+  stdexec::sync_wait(std::move(read_sender));
+  std::scoped_lock lock{stats.mtx};
+  stats.n_completions += options.nthreads;
   stats.cv.notify_one();
 }
 
@@ -483,21 +543,26 @@ int main(int argc, char* argv[]) {
   // libc++ has no jthread yet
   std::vector<std::thread> threads{};
   counters statistics{options.nthreads};
-  int n_files_per_thread = options.files.size() / options.nthreads;
+  int n_files_per_thread = options.files.size() / (options.use_io_pool ? 1 : options.nthreads);
   if (n_files_per_thread < 1) {
     throw std::runtime_error{"Not enough files for the number of threads"};
   }
   std::size_t n_bytes_per_thread = options.n_total_bytes / options.nthreads;
   n_bytes_per_thread += (options.block_size - n_bytes_per_thread % options.block_size);
-  for (int i = 0; i < options.nthreads; ++i) {
-    std::span<const file_options> files{options.files};
-    if (i == options.nthreads - 1) {
-      files = files.subspan(i * n_files_per_thread);
-    } else {
-      files = files.subspan(i * n_files_per_thread, n_files_per_thread);
+  if (!options.use_io_pool) {
+    for (int i = 0; i < options.nthreads; ++i) {
+      std::span<const file_options> files{options.files};
+      if (i == options.nthreads - 1) {
+        files = files.subspan(i * n_files_per_thread);
+      } else {
+        files = files.subspan(i * n_files_per_thread, n_files_per_thread);
+      }
+      threads.emplace_back(
+        run_io_uring, i, std::ref(options), files, n_bytes_per_thread, std::ref(statistics));
     }
+  } else {
     threads.emplace_back(
-      run_io_uring, i, std::ref(options), files, n_bytes_per_thread, std::ref(statistics));
+      run_mt_io_uring, std::ref(options), std::ref(statistics));
   }
 
   print_statistics(options, statistics);

@@ -21,7 +21,7 @@ namespace sio::io_uring {
 
   class static_io_pool {
    public:
-    explicit static_io_pool(std::size_t nthreads);
+    explicit static_io_pool(std::size_t nthreads, unsigned iodepth = 1024);
     ~static_io_pool();
 
     scheduler get_scheduler() noexcept;

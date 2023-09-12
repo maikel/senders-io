@@ -10,10 +10,11 @@ namespace sio::io_uring {
     context.run_until_stopped();
   }
 
-  static_io_pool::static_io_pool(std::size_t nthreads) {
-    contexts_.resize(nthreads);
+  static_io_pool::static_io_pool(std::size_t nthreads, unsigned iodepth) {
+    iodepth = (iodepth + nthreads - 1) / nthreads;
     threads_.reserve(nthreads);
     for (std::size_t i = 0; i < nthreads; ++i) {
+      contexts_.emplace_back(iodepth);
       threads_.emplace_back(thread_main, std::ref(contexts_[i]), i);
     }
   }
