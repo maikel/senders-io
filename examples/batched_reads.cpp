@@ -342,7 +342,7 @@ struct thread_state {
 struct mt_state {
   explicit mt_state(const program_options& options)
     : context{options.nthreads, options.submission_queue_length}
-    , buffer(2 * options.submission_queue_length * (1 << 10))
+    , buffer(2 * options.submission_queue_length * options.nthreads * (1 << 10))
     , upstream{(void*) buffer.data(), buffer.size()} {
     std::mt19937_64 rng{options.seed};
     auto read_n_bytes = options.n_total_bytes / options.files.size();
