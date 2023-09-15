@@ -20,10 +20,10 @@
 
 #include <stdexec/execution.hpp>
 
-#include <exec/linux/io_uring_context.hpp>
-
 #include <span>
 #include <variant>
+
+#include <sys/uio.h>
 
 namespace sio {
   template <class Sender, class Receiver>

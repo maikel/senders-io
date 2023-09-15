@@ -52,8 +52,20 @@ namespace sio {
         typename stop_token_t::template callback_type<on_stop_requested<SeqRcvr, ErrorsVariant>>>
         stop_callback_{};
 
+      using base_env_t = stdexec::env_of_t<SeqRcvr>;
+
+      using env_t = exec::make_env_t<
+        base_env_t,
+        exec::with_t<stdexec::get_stop_token_t, stdexec::in_place_stop_token>>;
+
+
+      // base_env_t base_env_ = stdexec::get_env(next_rcvr_);
+      env_t env_{exec::make_env(
+        stdexec::get_env(next_rcvr_),
+        exec::with(stdexec::get_stop_token, stop_source_.get_token()))};
+
       template <class Tp>
-      auto get_allocator() {
+      auto get_allocator() const noexcept {
         auto base = sio::async::get_allocator(stdexec::get_env(next_rcvr_));
         typename std::allocator_traits<decltype(base)>::template rebind_alloc<Tp> alloc{base};
         return alloc;
@@ -62,7 +74,7 @@ namespace sio {
       bool increase_ref() {
         std::ptrdiff_t expected = 1;
         while (
-          !ref_counter_.compare_exchange_weak(expected, expected + 1, std::memory_order_relaxed)) {
+          !ref_counter_.compare_exchange_weak(expected, expected + 1, std::memory_order_acq_rel)) {
           if (expected == 0) {
             return false;
           }
@@ -111,7 +123,7 @@ namespace sio {
       }
 
       void decrease_ref() {
-        if (ref_counter_.fetch_sub(1, std::memory_order_relaxed) == 1) {
+        if (ref_counter_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
           complete();
         }
       }
@@ -166,11 +178,13 @@ namespace sio {
       using is_receiver = void;
 
       item_operation<Item, SeqRcvr, ErrorsVariant>* item_op_;
+      operation_base<SeqRcvr, ErrorsVariant>* sequence_op_;
 
-      exec::make_env_t<
-        stdexec::env_of_t<SeqRcvr>,
-        exec::with_t<stdexec::get_stop_token_t, stdexec::in_place_stop_token>>
-        get_env(stdexec::get_env_t) const noexcept;
+      using env_t = typename operation_base<SeqRcvr, ErrorsVariant>::env_t;
+
+      const env_t& get_env(stdexec::get_env_t) const noexcept {
+        return sequence_op_->env_;
+      }
 
       void set_value(stdexec::set_value_t) && noexcept;
 
@@ -182,11 +196,10 @@ namespace sio {
       using is_receiver = void;
       operation_base<SeqRcvr, ErrorsVariant>* sequence_op_;
 
-      auto get_env(stdexec::get_env_t) const noexcept {
-        auto env = stdexec::get_env(sequence_op_->next_rcvr_);
-        return exec::make_env(
-          std::move(env),
-          exec::with(stdexec::get_stop_token, sequence_op_->stop_source_.get_token()));
+      using env_t = typename operation_base<SeqRcvr, ErrorsVariant>::env_t;
+
+      const env_t& get_env(stdexec::get_env_t) const noexcept {
+        return sequence_op_->env_;
       }
 
       void set_value(stdexec::set_value_t) && noexcept {
@@ -205,13 +218,16 @@ namespace sio {
         : sequence_op_{base}
         , inner_operations_{
             exec::set_next(base->next_rcvr_, std::move(item)),
-            item_receiver_t{this}} {
+            item_receiver_t{this, base}} {
       }
 
       using next_sender_t = exec::next_sender_of_t<SeqRcvr, Item>;
       using item_receiver_t = item_receiver<Item, SeqRcvr, ErrorsVariant>;
-
-      using async_delete_t = async_delete_sender<Item, SeqRcvr, ErrorsVariant>;
+      using base_allocator_t = allocator_of_t<stdexec::env_of_t<SeqRcvr>>;
+      using allocator_t =
+        typename std::allocator_traits<base_allocator_t>::template rebind_alloc< item_operation>;
+      using async_delete_t =
+        decltype(sio::async::async_delete(std::declval<allocator_t>(), (item_operation*) nullptr));
       using final_receiver_t = final_receiver<SeqRcvr, ErrorsVariant>;
 
       union inner_operations_t {
@@ -230,17 +246,9 @@ namespace sio {
       operation_base<SeqRcvr, ErrorsVariant>* sequence_op_;
       inner_operations_t inner_operations_;
 
-      void start_delete_operation() noexcept {
-        // destroy next_ operation
-        std::destroy_at(&inner_operations_.next_);
-        // start async_delete options
-        auto alloc = sequence_op_->template get_allocator<item_operation>();
-        std::construct_at(&inner_operations_.async_delete_, stdexec::__conv{[&] {
-          return stdexec::connect(
-            sio::async::async_delete(alloc, this), final_receiver_t{sequence_op_});
-        }});
-        stdexec::start(inner_operations_.async_delete_);
-      }
+      void start_delete_operation() noexcept;
+
+      allocator_t get_allocator() const noexcept;
 
       void start(stdexec::start_t) noexcept {
         if (sequence_op_->stop_source_.stop_requested()) {
@@ -252,18 +260,31 @@ namespace sio {
     };
 
     template <class Item, class SeqRcvr, class ErrorsVariant>
-    exec::make_env_t<
-      stdexec::env_of_t<SeqRcvr>,
-      exec::with_t<stdexec::get_stop_token_t, stdexec::in_place_stop_token>>
-      item_receiver<Item, SeqRcvr, ErrorsVariant>::get_env(stdexec::get_env_t) const noexcept {
-      return exec::make_env(
-        stdexec::get_env(item_op_->sequence_op_->next_rcvr_),
-        exec::with(stdexec::get_stop_token, item_op_->sequence_op_->stop_source_.get_token()));
+    void item_operation<Item, SeqRcvr, ErrorsVariant>::start_delete_operation() noexcept {
+      // destroy next_ operation
+      auto* op1 = &inner_operations_.next_;
+      std::destroy_at(op1);
+      // start async_delete options
+      allocator_t alloc = get_allocator();
+      void* ptr2 = &inner_operations_.async_delete_;
+      using op_type = stdexec::connect_result_t<async_delete_t, final_receiver_t>;
+      auto* op2 = std::launder(new (ptr2) op_type(stdexec::__conv{[&] {
+        return stdexec::connect(
+          sio::async::async_delete(alloc, this), final_receiver_t{sequence_op_});
+      }}));
+      stdexec::start(*op2);
+    }
+
+    template <class Item, class SeqRcvr, class ErrorsVariant>
+    item_operation<Item, SeqRcvr, ErrorsVariant>::allocator_t
+      item_operation<Item, SeqRcvr, ErrorsVariant>::get_allocator() const noexcept {
+      return sequence_op_->template get_allocator<item_operation>();
     }
 
     template <class Item, class SeqRcvr, class ErrorsVariant>
     void item_receiver<Item, SeqRcvr, ErrorsVariant>::set_value(stdexec::set_value_t) && noexcept {
       item_op_->start_delete_operation();
+      // item_op_->sequence_op_->decrease_ref();
     }
 
     template <class Item, class SeqRcvr, class ErrorsVariant>
@@ -271,6 +292,7 @@ namespace sio {
       item_receiver<Item, SeqRcvr, ErrorsVariant>::set_stopped(stdexec::set_stopped_t) && noexcept {
       item_op_->sequence_op_->request_stop();
       item_op_->start_delete_operation();
+      // item_op_->sequence_op_->decrease_ref();
     }
 
     template <class SeqRcvr, class ErrorsVariant>
@@ -373,7 +395,7 @@ namespace sio {
           this->stop_callback_.reset();
           stdexec::set_stopped(std::move(this->next_rcvr_));
         } else {
-          this->ref_counter_.store(1, std::memory_order_relaxed);
+          this->ref_counter_.store(1, std::memory_order_release);
           stdexec::start(op_);
         }
       }

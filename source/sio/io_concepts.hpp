@@ -160,17 +160,19 @@ namespace sio { namespace async {
     };
 
     template <class Handle, class... Args>
-    concept nothrow_static_read_some_member_function = requires(const Handle& handle, Args&&... args) {
-      { Handle::read_some(handle, read_some, static_cast<Args&&>(args)...) } noexcept;
-    };
+    concept nothrow_static_read_some_member_function =
+      requires(const Handle& handle, Args&&... args) {
+        { Handle::read_some(handle, read_some, static_cast<Args&&>(args)...) } noexcept;
+      };
 
     template <class Handle, class... Args>
-    concept has_read_some_customization =
-      has_read_some_member_function<Handle, Args...> || has_static_read_some_member_function<Handle, Args...>;
+    concept has_read_some_customization = has_read_some_member_function<Handle, Args...>
+                                       || has_static_read_some_member_function<Handle, Args...>;
 
     template <class Handle, class... Args>
-    concept nothrow_read_some_customization = nothrow_read_some_member_function<Handle, Args...>
-                                      || nothrow_static_read_some_member_function<Handle, Args...>;
+    concept nothrow_read_some_customization =
+      nothrow_read_some_member_function<Handle, Args...>
+      || nothrow_static_read_some_member_function<Handle, Args...>;
 
     struct read_some_t {
       template <class Handle, class... Args>
@@ -243,14 +245,14 @@ namespace sio { namespace async {
 
   namespace byte_stream_ {
     template <class Handle, class... Args>
-    concept has_write_some_member_function =
-      requires(const Handle& handle, Args... buffers) { handle.write_some(write_some, buffers...); };
+    concept has_write_some_member_function = requires(const Handle& handle, Args... buffers) {
+      handle.write_some(write_some, buffers...);
+    };
 
     template <class Handle, class... Args>
-    concept nothrow_write_some_member_function =
-      requires(const Handle& handle, Args&&... buffers) {
-        { handle.write_some(write_some, static_cast<Args&&>(buffers)...) } noexcept;
-      };
+    concept nothrow_write_some_member_function = requires(const Handle& handle, Args&&... buffers) {
+      { handle.write_some(write_some, static_cast<Args&&>(buffers)...) } noexcept;
+    };
 
     template <class Handle, class... Args>
     concept has_static_write_some_member_function =
@@ -266,7 +268,7 @@ namespace sio { namespace async {
 
     template <class Handle, class... Args>
     concept has_write_some_customization = has_write_some_member_function<Handle, Args...>
-                                   || has_static_write_some_member_function<Handle, Args...>;
+                                        || has_static_write_some_member_function<Handle, Args...>;
 
     template <class Handle, class... Args>
     concept nothrow_write_some_customization =
@@ -426,7 +428,9 @@ namespace sio { namespace async {
     template <class FileFactory, class... Args>
     concept nothrow_member_customization = //
       requires(FileFactory&& factory, Args&&... args) {
-        { static_cast<FileFactory&&>(factory).open_file(open_file, static_cast<Args&&>(args)...) } noexcept;
+        {
+          static_cast<FileFactory&&>(factory).open_file(open_file, static_cast<Args&&>(args)...)
+        } noexcept;
       };
 
     template <class FileFactory, class... Args>

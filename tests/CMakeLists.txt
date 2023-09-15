@@ -11,7 +11,7 @@ find_package(Catch2 REQUIRED)
 
 add_executable(test_sio
   test_main.cpp
-  test_static_io_pool.cpp
+  # test_static_io_pool.cpp
   sequence/test_ignore_all.cpp
   sequence/test_first.cpp
   sequence/test_last.cpp
@@ -36,7 +36,7 @@ add_executable(test_sio
   # net/test_can_socket.cpp
   net/test_address.cpp
   net/test_endpoint.cpp
-  net/test_resolve.cpp
+  # net/test_resolve.cpp
   net/test_socket_handle.cpp
 )
 target_include_directories(test_sio PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

@@ -19,7 +19,8 @@ find_package(stdexec REQUIRED)
 add_library(sio
   source/sio/io_uring/buffered_sequence.cpp
   source/sio/io_uring/file_handle.cpp
-  source/sio/io_uring/static_io_pool.cpp
+  source/sio/io_uring/io_uring_context.cpp
+  source/sio/io_uring/static_thread_pool.cpp
   source/sio/memory_pool.cpp)
 add_library(sio::sio ALIAS sio)
 target_include_directories(sio
@@ -56,8 +57,9 @@ target_sources(sio PUBLIC
     source/sio/sequence/zip.hpp
     source/sio/io_uring/buffered_sequence.hpp
     source/sio/io_uring/file_handle.hpp
+    source/sio/io_uring/io_uring_context.hpp
     source/sio/io_uring/socket_handle.hpp
-    source/sio/io_uring/static_io_pool.hpp
+    source/sio/io_uring/static_thread_pool.hpp
     source/sio/assert.hpp
     source/sio/async_allocator.hpp
     source/sio/async_channel.hpp
@@ -72,6 +74,7 @@ target_sources(sio PUBLIC
     source/sio/memory_pool.hpp
     source/sio/net_concepts.hpp
     source/sio/read_batched.hpp
+    source/sio/spmc_queue.hpp
     source/sio/tap.hpp
     source/sio/with_env.hpp)
 target_link_libraries(sio PUBLIC STDEXEC::stdexec)
