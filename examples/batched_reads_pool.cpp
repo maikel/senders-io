@@ -70,36 +70,10 @@ namespace {
     std::vector<::off_t> offsets{};
   };
 
-  struct thread_state {
-    explicit thread_state(
-      std::span<const file_options> files,
-      std::size_t memsize,
-      unsigned iodepth,
-      std::size_t read_n_bytes,
-      std::size_t block_size,
-      bool buffered,
-      std::mt19937_64& rng)
-      : context{iodepth}
-      , buffer(2 * iodepth * (1 << 10))
-      , upstream{(void*) buffer.data(), buffer.size()} {
-      read_n_bytes /= files.size();
-      read_n_bytes += (block_size - read_n_bytes % block_size) % block_size;
-      for (const file_options& fopts: files) {
-        this->files.emplace_back(fopts, context, memsize, read_n_bytes, block_size, rng, buffered);
-      }
-    }
-
-    Context context;
-    std::vector<file_state> files{};
-    std::vector<std::byte> buffer{};
-    monotonic_buffer_resource upstream;
-    sio::memory_pool pool{&upstream};
-  };
-
   struct mt_state {
     explicit mt_state(const program_options& options)
       : context{static_cast<std::size_t>(options.nthreads), options.submission_queue_length}
-      , buffer(2 * options.submission_queue_length * options.nthreads * (1 << 10))
+      , buffer(options.mempool_size)
       , upstream{(void*) buffer.data(), buffer.size()} {
       std::mt19937_64 rng{options.seed};
       auto read_n_bytes = options.n_total_bytes / options.files.size();

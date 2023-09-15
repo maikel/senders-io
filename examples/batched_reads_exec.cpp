@@ -74,6 +74,7 @@ namespace {
   struct thread_state {
     explicit thread_state(
       std::span<const file_options> files,
+      std::size_t mempool_size,
       std::size_t memsize,
       unsigned iodepth,
       std::size_t read_n_bytes,
@@ -81,7 +82,7 @@ namespace {
       bool buffered,
       std::mt19937_64& rng)
       : context{iodepth}
-      , buffer(2 * iodepth * (1 << 10))
+      , buffer(mempool_size)
       , upstream{(void*) buffer.data(), buffer.size()} {
       read_n_bytes /= files.size();
       read_n_bytes += (block_size - read_n_bytes % block_size) % block_size;
@@ -106,6 +107,7 @@ namespace {
     std::mt19937_64 rng{options.seed + thread_id};
     thread_state state(
       files,
+      options.mempool_size,
       options.memsize,
       options.submission_queue_length,
       n_bytes_per_thread,
