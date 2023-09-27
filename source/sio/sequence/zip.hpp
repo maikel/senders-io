@@ -460,7 +460,7 @@ namespace sio {
 
     template <class Env, class Sender>
     using single_values_of_t = //
-      __value_types_of_t< Sender, Env, __transform<__q<decay_t>, __q<__types>>, __q<__msingle>>;
+      __value_types_of_t<Sender, Env, __transform<__q<decay_t>, __q<__types>>, __q<__msingle>>;
 
     template <class Env>
     using env_t = decltype(exec::make_env(
@@ -472,17 +472,39 @@ namespace sio {
       __value_types_of_t<Sender, env_t<Env>, __q<__decayed_tuple>, __q<__msingle>>;
 
     template <class Env, class... Senders>
+    using all_items_t = __minvoke< __mconcat<>, exec::item_types_of_t<Senders, Env>...>;
+
+
+    template <class Env, class... Senders>
+    using result_tuple_t = __mapply<
+      __transform<__mbind_front_q<values_tuple_t, Env>, __q<std::tuple>>,
+      all_items_t<Env, Senders...>>;
+
+
+    template <class Env, class... Senders>
+    using error_types_items_t = __mapply<
+      __mconcat<>,
+      __mapply<
+        __transform<__mbind_back_q<__error_types_of_t, env_t<Env>, __q<__types>>>,
+        all_items_t<Env, Senders...>>>;
+
+    template <class Env, class... Senders>
+    using error_types_t = __minvoke<
+      __mconcat<__transform<__q<decay_t>, __nullable_variant_t>>,
+      __types<std::exception_ptr>,
+      error_types_items_t<Env, Senders...>,
+      error_types_of_t<Senders, env_t<Env>, __types>...>;
+
+
+    template <class Env, class... Senders>
     using set_values_sig_t = //
       completion_signatures<
         __minvoke< __mconcat<__qf<set_value_t>>, single_values_of_t<Env, Senders>...>>;
 
-    template <class Env, max1_sender<Env>... Senders>
+    template <class Env, class... Senders>
     using completions_t = //
       __concat_completion_signatures_t<
-        completion_signatures<set_stopped_t(), set_error_t(std::exception_ptr)>,
-        __minvoke<
-          __with_default<__mbind_front_q<set_values_sig_t, Env>, completion_signatures<>>,
-          Senders...>,
+        completion_signatures<set_value_t(), set_stopped_t(), set_error_t(std::exception_ptr)>,
         __try_make_completion_signatures<
           Senders,
           Env,
@@ -492,15 +514,10 @@ namespace sio {
 
     template <class Receiver, class... Senders>
     struct traits {
-      using result_tuple = __minvoke<
-        __transform<__mbind_front_q<values_tuple_t, env_of_t<Receiver>>, __q<std::tuple>>,
-        Senders...>;
+      using result_tuple = result_tuple_t<env_of_t<Receiver>, Senders...>;
 
       using errors_variant = //
-        __minvoke<
-          __mconcat<__transform<__q<decay_t>, __nullable_variant_t>>,
-          __types<std::exception_ptr>,
-          error_types_of_t<Senders, env_t<env_of_t<Receiver>>, __types>... >;
+        error_types_t<env_of_t<Receiver>, Senders...>;
 
       using operation_base = zip_::operation_base<Receiver, result_tuple, errors_variant>;
 
@@ -581,6 +598,10 @@ namespace sio {
       static auto
         get_completion_signatures(Self&& self, stdexec::get_completion_signatures_t, Env&& env)
           -> completions_t<Env, Senders...>;
+
+      template <decays_to<type> Self, class Env>
+      static auto get_item_types(Self&& self, exec::get_item_types_t, Env&& env)
+        -> exec::item_types<just_sender_t<result_tuple_t<Env, Senders...>>>;
     };
 
     struct zip_t {
