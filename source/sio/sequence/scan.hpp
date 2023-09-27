@@ -110,17 +110,22 @@ namespace sio {
       }
     };
 
-    template <class ItemSender, class Tp, class Fn, bool IsLockStep>
+    template <class ItemSender, class Tp, class Fn, class IsLockStep>
     struct item_sender {
       using is_sender = void;
 
       ItemSender sndr_;
-      scan_data<Tp, Fn, IsLockStep>* data_;
+      scan_data<Tp, Fn, IsLockStep::value>* data_;
 
       template <decays_to<item_sender> Self, class ItemReceiver>
-      static item_operation<copy_cvref_t<Self, ItemSender>, ItemReceiver, Tp, Fn, IsLockStep>
+      static item_operation<copy_cvref_t<Self, ItemSender>, ItemReceiver, Tp, Fn, IsLockStep::value>
         connect(Self&& self, stdexec::connect_t, ItemReceiver rcvr) {
-        return item_operation<copy_cvref_t<Self, ItemSender>, ItemReceiver, Tp, Fn, IsLockStep>{
+        return item_operation<
+          copy_cvref_t<Self, ItemSender>,
+          ItemReceiver,
+          Tp,
+          Fn,
+          IsLockStep::value>{
           static_cast<Self&&>(self).sndr_,
           static_cast<ItemReceiver&&>(rcvr),
           static_cast<Self&&>(self).data_};
@@ -155,7 +160,7 @@ namespace sio {
       auto set_next(exec::set_next_t, ItemSender&& sndr) {
         return exec::set_next(
           op_->rcvr_,
-          item_sender<decay_t<ItemSender>, Tp, Fn, IsLockStep>{
+          item_sender<decay_t<ItemSender>, Tp, Fn, stdexec::__mbool<IsLockStep>>{
             static_cast<ItemSender&&>(sndr), &op_->data_});
       }
 
@@ -201,7 +206,6 @@ namespace sio {
       static constexpr bool IsLockStep =
         std::same_as<parallelism_type<exec::sequence_env_of_t<Sender>>, exec::lock_step_t>;
 
-
       Tp init_;
       Fn fn_;
 
@@ -223,11 +227,18 @@ namespace sio {
 
       template <class Env>
       auto get_completion_signatures(stdexec::get_completion_signatures_t, Env&&) const
-        -> stdexec::__msuccess_or_t<stdexec::__try_make_completion_signatures<
-          Sender,
-          Env,
-          stdexec::completion_signatures<stdexec::set_error_t(std::exception_ptr)>,
-          stdexec::__mconst<stdexec::completion_signatures<stdexec::set_value_t(Tp)>> >>;
+        -> exec::__sequence_completion_signatures_of_t<Sender, Env>;
+
+      template <class Env>
+      auto get_item_types(exec::get_item_types_t, Env&&) const noexcept -> stdexec::__mapply<
+        stdexec::__transform<
+          stdexec::__mcompose<
+            stdexec::__mbind_back_q<item_sender, Tp, Fn, stdexec::__mbool<IsLockStep>>,
+            stdexec::__q<stdexec::__decay_t>>,
+          stdexec::__q<exec::item_types>>,
+        exec::item_types_of_t<Sender, Env>> {
+        return {};
+      }
 
       exec::sequence_env_of_t<Sender> get_sequence_env(exec::get_sequence_env_t) const noexcept {
         return exec::get_sequence_env(sndr_);

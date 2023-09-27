@@ -15,48 +15,9 @@
  */
 #pragma once
 
-#include "../concepts.hpp"
-#include "./sequence_concepts.hpp"
-
-#include <exec/env.hpp>
+#include <exec/sequence/empty_sequence.hpp>
 
 namespace sio {
-  namespace empty_sequence_ {
-    using namespace stdexec;
-
-    template <class Receiver>
-    struct operation {
-      [[no_unique_address]] Receiver rcvr_;
-
-      void start(start_t) noexcept {
-        stdexec::set_value(static_cast<Receiver&&>(rcvr_));
-      }
-    };
-
-    struct sender {
-      using is_sender = exec::sequence_tag;
-      using completion_signatures = stdexec::completion_signatures<>;
-
-      template <receiver_of<completion_signatures> Rcvr>
-      operation<Rcvr> subscribe(exec::subscribe_t, Rcvr&& rcvr) const
-        noexcept(nothrow_decay_copyable<Rcvr>) {
-        return {static_cast<Rcvr&&>(rcvr)};
-      }
-
-      auto get_sequence_env(exec::get_sequence_env_t) const noexcept {
-        return exec::make_env(
-          exec::with(exec::parallelism, exec::lock_step),
-          exec::with(exec::cardinality, std::integral_constant<std::size_t, 0>{}));
-      }
-    };
-
-    struct empty_sequence_t {
-      sender operator()() const noexcept {
-        return {};
-      }
-    };
-  }
-
-  using empty_sequence_::empty_sequence_t;
+  using exec::empty_sequence_t;
   inline constexpr empty_sequence_t empty_sequence{};
 }
