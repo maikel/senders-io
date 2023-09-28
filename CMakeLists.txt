@@ -17,7 +17,8 @@ endif()
 find_package(stdexec REQUIRED)
 
 add_library(sio
-  source/sio/io_uring/buffered_sequence.cpp
+  source/sio/const_buffer_span.cpp
+  source/sio/mutable_buffer_span.cpp
   source/sio/io_uring/file_handle.cpp
   source/sio/memory_pool.cpp)
 add_library(sio::sio ALIAS sio)
@@ -38,6 +39,7 @@ target_sources(sio PUBLIC
     source/sio/local/stream_protocol.hpp
     source/sio/local/endpoint.hpp
     source/sio/sequence/any_sequence_of.hpp
+    source/sio/sequence/buffered_sequence.hpp
     source/sio/sequence/empty_sequence.hpp
     source/sio/sequence/first.hpp
     source/sio/sequence/fork.hpp
@@ -52,8 +54,7 @@ target_sources(sio PUBLIC
     source/sio/sequence/sequence_concepts.hpp
     source/sio/sequence/then_each.hpp
     source/sio/sequence/transform_each.hpp
-    source/sio/sequence/zip.hpp
-    source/sio/io_uring/buffered_sequence.hpp
+    source/sio/sequence/zip.hpp    
     source/sio/io_uring/file_handle.hpp
     source/sio/io_uring/socket_handle.hpp
     source/sio/assert.hpp
@@ -61,7 +62,10 @@ target_sources(sio PUBLIC
     source/sio/async_channel.hpp
     source/sio/async_mutex.hpp
     source/sio/async_resource.hpp
+    source/sio/buffer_algorithms.hpp
     source/sio/concepts.hpp
+    source/sio/const_buffer_span.hpp
+    source/sio/const_buffer.hpp
     source/sio/deferred.hpp
     source/sio/finally.hpp
     source/sio/intrusive_list.hpp

@@ -39,35 +39,24 @@ namespace sio::io_uring {
     sqe = sqe_;
   }
 
-  read_submission::read_submission(
-    std::variant<::iovec, std::span<::iovec>> buffers,
-    int fd,
-    ::off_t offset) noexcept
+  read_submission::read_submission(mutable_buffer_span buffers, int fd, ::off_t offset) noexcept
     : buffers_{buffers}
     , fd_{fd}
     , offset_{offset} {
   }
-
-  read_submission::~read_submission() = default;
 
   void read_submission::submit(::io_uring_sqe& sqe) const noexcept {
     ::io_uring_sqe sqe_{};
     sqe_.opcode = IORING_OP_READV;
     sqe_.fd = fd_;
     sqe_.off = offset_;
-    if (buffers_.index() == 0) {
-      sqe_.addr = std::bit_cast<__u64>(std::get_if<0>(&buffers_));
-      sqe_.len = 1;
-    } else {
-      std::span<const ::iovec> buffers = *std::get_if<1>(&buffers_);
-      sqe_.addr = std::bit_cast<__u64>(buffers.data());
-      sqe_.len = buffers.size();
-    }
+    sqe_.addr = std::bit_cast<__u64>(buffers_.begin());
+    sqe_.len = buffers_.size();
     sqe = sqe_;
   }
 
-  write_submission::write_submission(
-    std::variant<::iovec, std::span<::iovec>> buffers,
+  read_submission_single::read_submission_single(
+    mutable_buffer buffers,
     int fd,
     ::off_t offset) noexcept
     : buffers_{buffers}
@@ -75,21 +64,50 @@ namespace sio::io_uring {
     , offset_{offset} {
   }
 
-  write_submission::~write_submission() = default;
+  read_submission_single::~read_submission_single() = default;
+
+  void read_submission_single::submit(::io_uring_sqe& sqe) const noexcept {
+    ::io_uring_sqe sqe_{};
+    sqe_.opcode = IORING_OP_READ;
+    sqe_.fd = fd_;
+    sqe_.off = offset_;
+    sqe_.addr = std::bit_cast<__u64>(buffers_.data());
+    sqe_.len = buffers_.size();
+    sqe = sqe_;
+  }
+
+  write_submission::write_submission(const_buffer_span buffers, int fd, ::off_t offset) noexcept
+    : buffers_{buffers}
+    , fd_{fd}
+    , offset_{offset} {
+  }
 
   void write_submission::submit(::io_uring_sqe& sqe) const noexcept {
     ::io_uring_sqe sqe_{};
     sqe_.opcode = IORING_OP_WRITEV;
     sqe_.fd = fd_;
     sqe_.off = offset_;
-    if (buffers_.index() == 0) {
-      sqe_.addr = std::bit_cast<__u64>(std::get_if<0>(&buffers_));
-      sqe_.len = 1;
-    } else {
-      std::span<const ::iovec> buffers = *std::get_if<1>(&buffers_);
-      sqe_.addr = std::bit_cast<__u64>(buffers.data());
-      sqe_.len = buffers.size();
-    }
+    sqe_.addr = std::bit_cast<__u64>(buffers_.begin());
+    sqe_.len = buffers_.size();
+    sqe = sqe_;
+  }
+
+  write_submission_single::write_submission_single(
+    const_buffer buffers,
+    int fd,
+    ::off_t offset) noexcept
+    : buffers_{buffers}
+    , fd_{fd}
+    , offset_{offset} {
+  }
+
+  void write_submission_single::submit(::io_uring_sqe& sqe) const noexcept {
+    ::io_uring_sqe sqe_{};
+    sqe_.opcode = IORING_OP_WRITE;
+    sqe_.fd = fd_;
+    sqe_.off = offset_;
+    sqe_.addr = std::bit_cast<__u64>(buffers_.data());
+    sqe_.len = buffers_.size();
     sqe = sqe_;
   }
 }
