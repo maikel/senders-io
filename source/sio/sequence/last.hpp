@@ -285,14 +285,14 @@ namespace sio {
     };
 
     struct last_t {
-      template <exec::sequence_sender Sender>
+      template <exec::sequence_sender<stdexec::no_env> Sender>
       auto operator()(Sender&& seq) const noexcept(nothrow_decay_copyable<Sender>) ->
         typename sender<__decay_t<Sender>>::type {
         return {static_cast<Sender&&>(seq)};
       }
 
       template <stdexec::sender Sender>
-        requires(!exec::sequence_sender<Sender>)
+        requires(!exec::sequence_sender<Sender, stdexec::no_env>)
       auto operator()(Sender&& sndr) const noexcept {
         return static_cast<Sender&&>(sndr);
       }
