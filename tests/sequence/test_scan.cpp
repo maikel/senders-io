@@ -37,7 +37,7 @@ TEST_CASE("scan - with just sender and back binder", "[sequence][scan][last]") {
 TEST_CASE("scan - with iterate", "[sequence][scan][last][iterate]") {
   std::array<int, 3> arr{1, 2, 3};
   auto iterate = sio::iterate(std::ranges::views::all(arr));
-  STATIC_REQUIRE(exec::sequence_sender<decltype(iterate)>);
+  STATIC_REQUIRE(exec::sequence_sender<decltype(iterate), stdexec::no_env>);
   auto scan = sio::scan(sio::iterate(std::ranges::views::all(arr)), 0);
   using Scan = decltype(scan);
   // stdexec::__types<Scan> {};
