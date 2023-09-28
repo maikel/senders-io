@@ -93,10 +93,6 @@ TEST_CASE(
 //   stdexec::__transform<stdexec::__mbind_back_q<exec::__to_sequence_completion_signatures, _Env>>,
 //   exec::item_types_of_t< _Sequence, _Env>>;
 
-template <class _Sequence, class _Env>
-using item_completion_signatures_of_t =
-  exec::__concat_item_signatures_t< exec::item_types_of_t<_Sequence, _Env>, _Env>;
-
 TEST_CASE("merge_each - for subsequences", "[merge_each][then_each][iterate]") {
   std::array<int, 2> indices{1, 2};
   int counter = 0;

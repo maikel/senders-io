@@ -7,9 +7,13 @@
 
 #include <catch2/catch.hpp>
 
+template <class... Ts>
+using just_item_t = decltype(stdexec::just(std::declval<Ts>()...));
+
 TEST_CASE("fork - with empty_sequence") {
   auto fork = sio::fork(sio::empty_sequence());
   using sigs = stdexec::completion_signatures_of_t<decltype(fork), stdexec::empty_env>;
+  using items = exec::item_types_of_t<decltype(fork), stdexec::empty_env>;
   using newSigs = stdexec::__concat_completion_signatures_t<stdexec::__with_exception_ptr, sigs>;
   sio::any_sequence_receiver_ref<newSigs>::any_sender<> seq = fork;
 }

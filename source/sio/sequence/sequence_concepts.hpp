@@ -150,4 +150,8 @@ namespace exec {
       }
     }
   }
+
+  template <class _Sequence, class _Env>
+  using item_completion_signatures_of_t =
+    exec::__concat_item_signatures_t<exec::item_types_of_t<_Sequence, _Env>, _Env>;
 }
