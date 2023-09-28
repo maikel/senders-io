@@ -328,13 +328,9 @@ namespace sio::async {
   concept resource = requires(Resource&& __resource) { use(__resource); };
 
   template <class _Sequence, class _Env>
-  using item_completion_signatures_of_t =
-    exec::__concat_item_signatures_t< exec::item_types_of_t<_Sequence, _Env>, _Env>;
-
-  template <class _Sequence, class _Env>
   using single_item_value_t = stdexec::__gather_signal<
     stdexec::set_value_t,
-    item_completion_signatures_of_t<_Sequence, _Env>,
+    exec::item_completion_signatures_of_t<_Sequence, _Env>,
     stdexec::__msingle_or<void>,
     stdexec::__q<stdexec::__msingle>>;
 
