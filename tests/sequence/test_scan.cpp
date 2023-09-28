@@ -43,7 +43,7 @@ TEST_CASE("scan - with iterate", "[sequence][scan][last][iterate]") {
   // stdexec::__types<Scan> {};
   // using sigs = decltype(stdexec::get_completion_signatures(scan, stdexec::empty_env{}));
   STATIC_REQUIRE(stdexec::sender_in<Scan, stdexec::empty_env>);
-  STATIC_REQUIRE(exec::sequence_sender<Scan>);
+  STATIC_REQUIRE(exec::sequence_sender<Scan, stdexec::no_env>);
   // using sigs = stdexec::completion_signatures_of_t<decltype(scan), stdexec::empty_env>;
   // stdexec::__types<sigs> {};
   // STATIC_REQUIRE(stdexec::sender<Scan>);
