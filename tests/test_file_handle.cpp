@@ -1,4 +1,5 @@
 #include "sio/io_uring/file_handle.hpp"
+#include "sio/buffer.hpp"
 
 #include <exec/task.hpp>
 #include <exec/when_any.hpp>
@@ -33,7 +34,7 @@ task<void> no_op_path(sio::io_uring::path_handle handle) {
 task<void> no_op_file(sio::io_uring::seekable_byte_stream input) {
   CHECK(input.get() > 0);
   std::byte buffer[8]{};
-  std::size_t nbytes = co_await sio::async::read_some(input, buffer, 0);
+  std::size_t nbytes = co_await sio::async::read_some(input, sio::buffer(buffer), 0);
   CHECK(nbytes == 0);
   co_return;
 }

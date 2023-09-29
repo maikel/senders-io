@@ -17,21 +17,27 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <span>
 
 namespace sio {
   class mutable_buffer {
-    const std::byte* data_{nullptr};
+    std::byte* data_{nullptr};
     std::size_t size_{};
 
    public:
     mutable_buffer() = default;
 
-    explicit mutable_buffer(const void* pointer, std::size_t size)
-      : data_{static_cast<const std::byte*>(pointer)}
+    explicit mutable_buffer(std::span<std::byte> data) noexcept
+      : data_{data.data()}
+      , size_{data.size()} {
+    }
+
+    explicit mutable_buffer(void* pointer, std::size_t size) noexcept
+      : data_{static_cast<std::byte*>(pointer)}
       , size_{size} {
     }
 
-    const std::byte* data() const noexcept {
+    std::byte* data() const noexcept {
       return data_;
     }
 

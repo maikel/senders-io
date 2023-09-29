@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <span>
 
 namespace sio {
   class const_buffer {
@@ -26,7 +27,12 @@ namespace sio {
    public:
     const_buffer() = default;
 
-    explicit const_buffer(const void* pointer, std::size_t size)
+    explicit const_buffer(std::span<const std::byte> data) noexcept
+      : data_{data.data()}
+      , size_{data.size()} {
+    }
+
+    explicit const_buffer(const void* pointer, std::size_t size) noexcept
       : data_{static_cast<const std::byte*>(pointer)}
       , size_{size} {
     }

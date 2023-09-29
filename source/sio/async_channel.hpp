@@ -256,9 +256,12 @@ namespace sio {
       auto notify_all(Sequence&& seq) const {
         return sio::transform_each(
                  std::forward<Sequence>(seq),
-                 [base = base_]<class Item>(Item&& item) {
-                   return base.notify_all(std::forward<Item>(item));
-                 })
+                 stdexec::__binder_back{
+                   {},
+                   [base = base_]<class Item>(Item&& item) {
+                     return base.notify_all(std::forward<Item>(item));
+                   },
+                   {}})
              | sio::ignore_all();
       }
 

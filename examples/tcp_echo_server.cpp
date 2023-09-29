@@ -27,11 +27,11 @@ auto echo_input(tcp_socket client) {
   return stdexec::let_value(
     stdexec::just(client, std::array<std::byte, 1024>{}),
     [](auto socket, std::span<std::byte> buffer) {
-      return sio::async::read_some(socket, buffer) //
+      return sio::async::read_some(socket, sio::mutable_buffer{buffer}) //
            | stdexec::let_value([=](std::size_t nbytes) {
                return if_then_else(
                  nbytes != 0,
-                 sio::async::write(socket, buffer.subspan(0, nbytes)),
+                 sio::async::write(socket, sio::const_buffer{buffer}.prefix(nbytes)),
                  stdexec::just(0));
              })
            | stdexec::then([](std::size_t nbytes) { return nbytes == 0; })

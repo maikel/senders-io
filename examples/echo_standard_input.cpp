@@ -1,5 +1,6 @@
 #include <sio/io_uring/file_handle.hpp>
 #include <sio/sequence/reduce.hpp>
+#include <sio/buffer.hpp>
 
 #include <exec/task.hpp>
 #include <exec/when_any.hpp>
@@ -34,14 +35,15 @@ task<void> write_all(sio::async::writable_byte_stream auto out, std::span<const 
 task<void>
   echo(sio::async::readable_byte_stream auto in, sio::async::writable_byte_stream auto out) {
   char buffer[64] = {};
-  std::size_t nbytes = co_await sio::async::read_some(in, as_bytes(buffer));
+  std::size_t nbytes = co_await sio::async::read_some(in, sio::buffer(buffer));
   while (nbytes) {
-    auto written_bytes = co_await sio::async::write(out, as_bytes(buffer).subspan(0, nbytes));
+    auto written_bytes = co_await sio::async::write(
+      out, sio::buffer(std::as_const(buffer)).prefix(nbytes));
     if (written_bytes != nbytes) {
       std::cerr << "Failed to write all bytes" << std::endl;
       co_return;
     }
-    nbytes = co_await sio::async::read_some(in, as_bytes(buffer));
+    nbytes = co_await sio::async::read_some(in, sio::buffer(buffer));
   }
   co_return;
 }
