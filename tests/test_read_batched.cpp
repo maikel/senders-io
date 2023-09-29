@@ -32,8 +32,7 @@ TEST_CASE("read_batched - Read from a file", "[read_batched]") {
     sio::mutable_buffer(&values[0], sizeof(int)),
     sio::mutable_buffer(&values[1], sizeof(int)),
     sio::mutable_buffer(&values[2], sizeof(int))};
-  sio::mutable_buffer_span buffers{bytes};
-  auto sndr = sio::async::read_batched(stream, buffers, offsets);
+  auto sndr = sio::async::read_batched(stream, bytes, offsets);
   stdexec::sync_wait(exec::when_any(std::move(sndr), context.run()));
   CHECK(values[0] == 42);
   CHECK(values[1] == 4242);
