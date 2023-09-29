@@ -37,7 +37,7 @@ TEST_CASE("ignore_all - with just_stopped sender", "[sequence][ignore_all]") {
   STATIC_REQUIRE(stdexec::same_as<
                  completion_sigs,
                  stdexec::completion_signatures<stdexec::set_value_t(), stdexec::set_stopped_t()>>);
-  REQUIRE(stdexec::sync_wait(ignore));
+  REQUIRE(!stdexec::sync_wait(ignore));
 }
 
 TEST_CASE("ignore_all - with just_error sender", "[sequence][ignore_all]") {

@@ -96,23 +96,22 @@ TEST_CASE(
 TEST_CASE("merge_each - for subsequences", "[merge_each][then_each][iterate]") {
   std::array<int, 2> indices{1, 2};
   int counter = 0;
-  auto merge = sio::iterate(std::ranges::views::all(indices)) //
-             | sio::then_each([](int i) {
-                 return sio::iterate(std::array<int, 2>{i, i});
-               })                //
-             | sio::merge_each() //
-             | sio::then_each([&](int value) {
-                 if (counter == 0)
-                   CHECK(value == 1);
-                 else if (counter == 1)
-                   CHECK(value == 1);
-                 else if (counter == 2)
-                   CHECK(value == 2);
-                 else if (counter == 3)
-                   CHECK(value == 2);
-                 else
-                   CHECK(false);
-                 ++counter;
-               });
+  auto merge =
+    sio::iterate(std::ranges::views::all(indices))                                              //
+    | sio::then_each([](int i) { return sio::merge_each(stdexec::just(i), stdexec::just(i)); }) //
+    | sio::merge_each()                                                                         //
+    | sio::then_each([&](int value) {
+        if (counter == 0)
+          CHECK(value == 1);
+        else if (counter == 1)
+          CHECK(value == 1);
+        else if (counter == 2)
+          CHECK(value == 2);
+        else if (counter == 3)
+          CHECK(value == 2);
+        else
+          CHECK(false);
+        ++counter;
+      });
   CHECK(stdexec::sync_wait(sio::ignore_all(merge)));
 }
