@@ -5,6 +5,7 @@
 #include <sio/sequence/then_each.hpp>
 #include <sio/sequence/ignore_all.hpp>
 #include <sio/memory_pool.hpp>
+#include <sio/mutable_buffer.hpp>
 #include <sio/with_env.hpp>
 
 #include <exec/when_any.hpp>
@@ -153,8 +154,7 @@ struct file_state {
     offsets.reserve(read_num_blocks);
     std::uniform_int_distribution<std::size_t> off_dist(0, num_blocks - 1);
     for (std::size_t i = 0; i < read_num_blocks; i++) {
-      buffers.push_back(
-        std::as_writable_bytes(std::span{buffer_data + i * block_size, block_size}));
+      buffers.push_back(sio::mutable_buffer(buffer_data + i * block_size, block_size));
       offsets.push_back(off_dist(rng) * block_size);
     }
   }
@@ -164,7 +164,7 @@ struct file_state {
   std::size_t file_size;
   std::size_t num_blocks;
   std::unique_ptr<std::byte[], aligned_deleter> buffer_storage{};
-  std::vector<std::span<std::byte>> buffers{};
+  std::vector<sio::mutable_buffer> buffers{};
   std::vector<::off_t> offsets{};
 };
 
@@ -322,7 +322,7 @@ struct thread_state {
 
   exec::io_uring_context context{};
   std::vector<file_state> files{};
-  std::vector<std::byte> buffer{};
+  std::vector<sio::mutable_buffer> buffer{};
   monotonic_buffer_resource upstream;
   sio::memory_pool pool{&upstream};
 };
@@ -357,11 +357,13 @@ struct counters {
 
 auto read_with_counter(
   sio::io_uring::seekable_byte_stream stream,
-  std::span<std::byte> buffer,
+  sio::mutable_buffer buffer,
   ::off_t offset,
   counters& stats,
   const int thread_id) {
-  auto buffered_read_some = sio::buffered_sequence{sio::async::read_some(stream, buffer, offset)};
+  auto buffered_read_some =
+    sio::buffered_sequence<sio::io_uring::read_factory, sio::mutable_buffer>(
+      sio::io_uring::read_factory{stream.context_, stream.fd_}, buffer, offset);
   auto with_increase_counters = sio::then_each(
     std::move(buffered_read_some), [&stats, thread_id](std::size_t n_bytes) noexcept {
       stats.notify_read(n_bytes, thread_id);
@@ -373,7 +375,7 @@ auto read_with_counter(
 template <sio::async::seekable_byte_stream ByteStream>
 auto read_batched(
   ByteStream stream,
-  sio::async::buffers_type_of_t<ByteStream> buffers,
+  std::span<sio::mutable_buffer> buffers,
   std::span<const sio::async::offset_type_of_t<ByteStream>> offsets,
   sio::memory_pool_allocator<std::byte> allocator,
   counters& stats,
@@ -382,9 +384,9 @@ auto read_batched(
   auto sender =
     sio::zip(sio::iterate(buffers), sio::iterate(offsets)) //
     | sio::fork()                                          //
-    | sio::let_value_each([stream, &stats, thread_id](
-                            sio::async::buffer_type_of_t<ByteStream> buffer,
-                            sio::async::offset_type_of_t<ByteStream> offset) {
+    | sio::let_value_each(
+      [stream, &stats, thread_id](
+        sio::mutable_buffer buffer, sio::async::offset_type_of_t<ByteStream> offset) {
         return read_with_counter(stream, buffer, offset, stats, thread_id);
       })
     | sio::ignore_all();
