@@ -70,7 +70,8 @@ namespace exec {
 
       template <class Env>
         requires tag_invocable<sequence_receiver_stops_item_t, const Env&>
-      constexpr tag_invoke_result_t<sequence_receiver_stops_item_t, const Env&> operator()(const Env& env) const
+      constexpr tag_invoke_result_t<sequence_receiver_stops_item_t, const Env&>
+        operator()(const Env& env) const
         noexcept(nothrow_tag_invocable<sequence_receiver_stops_item_t, const Env&>) {
         return tag_invoke(*this, env);
       }
@@ -95,38 +96,40 @@ namespace exec {
   using sequence_queries::many_sender_t;
   using sequence_queries::many_sender;
 
-  STDEXEC_DEFINE_CPO(struct get_sequence_env_t, get_sequence_env) {
-    template <sequence_sender Sequence>
-    requires tag_invocable<get_sequence_env_t, const Sequence&>
-    constexpr tag_invoke_result_t<get_sequence_env_t,const Sequence&>
-    operator()(const Sequence& seq)
-      const noexcept {
-      static_assert(nothrow_tag_invocable<get_sequence_env_t, const Sequence&>);
-      return tag_invoke(*this, seq);
-    }
+  namespace __get_sequence_env {
+    using namespace stdexec;
 
-    template <sequence_sender Sequence>
-      requires(!tag_invocable<get_sequence_env_t, const Sequence&>)
-    constexpr empty_env operator()(const Sequence& seq) const noexcept {
-      return {};
-    }
+    struct get_sequence_env_t {
+      template <sequence_sender<no_env> Sequence>
+        requires tag_invocable<get_sequence_env_t, const Sequence&>
+      constexpr tag_invoke_result_t< get_sequence_env_t, const Sequence&>
+        operator()(const Sequence& seq) const noexcept {
+        static_assert(nothrow_tag_invocable<get_sequence_env_t, const Sequence&>);
+        return tag_invoke(*this, seq);
+      }
 
-    template <sender Sequence>
-      requires(!sequence_sender<Sequence>)
-    constexpr auto operator()(const Sequence& seq) const noexcept {
-      return make_env(
-        with(cardinality_t{}, std::integral_constant<size_t, 1>{}),
-        with(parallelism_t{}, lock_step));
-    }
-  };
+      template <sequence_sender<no_env> Sequence>
+        requires(!tag_invocable<get_sequence_env_t, const Sequence&>)
+      constexpr empty_env operator()(const Sequence& seq) const noexcept {
+        return {};
+      }
+
+      template <sender Sequence>
+        requires(!sequence_sender<Sequence, no_env>)
+      constexpr auto operator()(const Sequence& seq) const noexcept {
+        return make_env(
+          with(cardinality_t{}, std::integral_constant<size_t, 1>{}),
+          with(parallelism_t{}, lock_step));
+      }
+    };
+  }
+
+  using __get_sequence_env::get_sequence_env_t;
 
   inline constexpr get_sequence_env_t get_sequence_env;
 
   template <class EnvProvider>
   using sequence_env_of_t = stdexec::__call_result_t<get_sequence_env_t, EnvProvider>;
-
-  template <class Rcvr, class Sender>
-  using next_sender_of_t = __next_sender_of_t<Rcvr, Sender>;
 
   template <class Sequence, class Receiver>
   concept nothrow_subscribeable =
@@ -147,4 +150,8 @@ namespace exec {
       }
     }
   }
+
+  template <class _Sequence, class _Env>
+  using item_completion_signatures_of_t =
+    exec::__concat_item_signatures_t<exec::item_types_of_t<_Sequence, _Env>, _Env>;
 }

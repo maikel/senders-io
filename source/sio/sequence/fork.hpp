@@ -304,7 +304,7 @@ namespace sio {
       template <class Item>
       auto set_next(exec::set_next_t, Item&& item) {
         return stdexec::just(std::forward<Item>(item))
-             | stdexec::let_value([op = sequence_op_](std::decay_t<Item>& item) {
+             | stdexec::let_value([op = sequence_op_](std::decay_t<Item>& item) noexcept {
                  return if_then_else(op->increase_ref(), std::move(item), stdexec::just_stopped());
                })
              | stdexec::let_value([op = sequence_op_]<class... Vals>(Vals&&... values) noexcept {
@@ -358,16 +358,45 @@ namespace sio {
 
     template <class Sequence, class Env>
     struct traits {
+      using item_completions = exec::item_completion_signatures_of_t<Sequence, Env>;
+
+      template <class Variant>
+      using error_types_t = stdexec::__gather_signal<
+        stdexec::set_error_t,
+        item_completions,
+        stdexec::__q<stdexec::__midentity>,
+        Variant>;
+
+      template <
+        class Tuple = stdexec::__q<stdexec::__types>,
+        class Variant = stdexec::__q<stdexec::__types>>
+      using value_types_t =
+        stdexec::__gather_signal<stdexec::set_value_t, item_completions, Tuple, Variant>;
+
+      template <class... Ts>
+      using just_item_t = decltype(stdexec::just(std::declval<Ts>()...));
+
+      using decay_each = stdexec::__transform<stdexec::__q<decay_t>>;
+
+      using item_types = stdexec::__gather_signal<
+        stdexec::set_value_t,
+        item_completions,
+        stdexec::__q<just_item_t>,
+        stdexec::__q<exec::item_types>>;
+
       using errors_variant = stdexec::__minvoke<
         stdexec::__mconcat<stdexec::__nullable_variant_t>,
-        stdexec::error_types_of_t<Sequence, Env, stdexec::__types >,
+        stdexec::error_types_of_t<Sequence, Env, stdexec::__types>,
+        error_types_t<decay_each>,
         stdexec::__types<std::exception_ptr>>;
 
-      using compl_sigs = stdexec::make_completion_signatures<
-        Sequence,
-        Env,
-        stdexec::completion_signatures<stdexec::set_error_t(std::exception_ptr)>,
-        decay_args>;
+      template <class... Es>
+      using to_error_sig = stdexec::completion_signatures<stdexec::set_error_t(decay_t<Es>)...>;
+
+      using compl_sigs = stdexec::__concat_completion_signatures_t<
+        stdexec::completion_signatures_of_t<Sequence, Env>,
+        error_types_t<stdexec::__q<to_error_sig>>,
+        stdexec::completion_signatures<stdexec::set_stopped_t()>>;
     };
 
     template <class Sequence, class SeqRcvr>
@@ -418,7 +447,15 @@ namespace sio {
 
       template <decays_to<sequence> Self, class Env>
       static auto get_completion_signatures(Self&&, stdexec::get_completion_signatures_t, Env&&) ->
-        typename traits<copy_cvref_t<Self, Sequence>, Env>::compl_sigs;
+        typename traits<copy_cvref_t<Self, Sequence>, Env>::compl_sigs {
+        return {};
+      }
+
+      template <decays_to<sequence> Self, class Env>
+      static auto get_item_types(Self&&, exec::get_item_types_t, Env&&) ->
+        typename traits<copy_cvref_t<Self, Sequence>, Env>::item_types {
+        return {};
+      }
     };
   }
 

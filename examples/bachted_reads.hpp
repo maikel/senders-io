@@ -142,14 +142,17 @@ struct counters {
   };
 };
 
+template <class Context>
 auto read_with_counter(
-  auto stream,
-  std::span<std::byte> buffer,
+  sio::io_uring::basic_seekable_byte_stream<Context> stream,
+  sio::mutable_buffer buffer,
   ::off_t offset,
   counters& stats,
   const int thread_id) {
   static std::atomic<int> counter = 0;
-  auto buffered_read_some = sio::buffered_sequence{sio::async::read_some(stream, buffer, offset)};
+  auto buffered_read_some =
+    sio::buffered_sequence<sio::io_uring::read_factory<Context>, sio::mutable_buffer>(
+      sio::io_uring::read_factory<Context>{stream.context_, stream.fd_}, buffer, offset);
   auto with_increase_counters = sio::then_each(
     std::move(buffered_read_some), [&stats, thread_id](std::size_t n_bytes) noexcept {
       static thread_local int this_thread_id = counter.fetch_add(1, std::memory_order_relaxed);
@@ -162,7 +165,7 @@ auto read_with_counter(
 template <sio::async::seekable_byte_stream ByteStream>
 auto read_batched(
   ByteStream stream,
-  sio::async::buffers_type_of_t<ByteStream> buffers,
+  std::span<sio::async::buffer_type_of_t<ByteStream>> buffers,
   std::span<const sio::async::offset_type_of_t<ByteStream>> offsets,
   sio::memory_pool_allocator<std::byte> allocator,
   counters& stats,

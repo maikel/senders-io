@@ -50,6 +50,7 @@ struct monotonic_buffer_resource : sio::memory_resource {
 TEST_CASE("fork - with empty_sequence", "[fork]") {
   auto fork = sio::fork(sio::empty_sequence());
   using sigs = stdexec::completion_signatures_of_t<decltype(fork), stdexec::empty_env>;
+  using items = exec::item_types_of_t<decltype(fork), stdexec::empty_env>;
   using newSigs = stdexec::__concat_completion_signatures_t<stdexec::__with_exception_ptr, sigs>;
   sio::any_sequence_receiver_ref<newSigs>::any_sender<> seq = fork;
 }
@@ -80,7 +81,7 @@ namespace stdv = std::views;
 template <sio::async::seekable_byte_stream ByteStream>
 auto read_batched(
   ByteStream stream,
-  sio::async::buffers_type_of_t<ByteStream> buffers,
+  std::span<sio::async::buffer_type_of_t<ByteStream>> buffers,
   std::span<const sio::async::offset_type_of_t<ByteStream>> offsets) {
   auto sender =
     sio::zip(sio::iterate(buffers), sio::iterate(offsets)) //
@@ -104,10 +105,10 @@ TEST_CASE("fork - thread safety", "[fork]") {
   native_fd_handle h(ctx, fd);
   stream strm(h);
   std::vector<std::byte> read_buffer(10 * (4 << 10));
-  std::vector<std::span<std::byte>> buffers{};
+  std::vector<sio::mutable_buffer> buffers{};
   std::vector<sio::async::offset_type_of_t<stream>> offsets{};
   for (int i = 0; i < 10; ++i) {
-    buffers.push_back(std::span<std::byte>(read_buffer.data() + (i * (4 << 10)), 4 << 10));
+    buffers.push_back(sio::mutable_buffer(read_buffer.data() + (i * (4 << 10)), 4 << 10));
     offsets.push_back(i * (4 << 10));
   }
   REQUIRE(fd);

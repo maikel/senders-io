@@ -13,11 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#pragma once
-
-#include <exec/sequence/empty_sequence.hpp>
+#include <cstddef>
 
 namespace sio {
-  using exec::empty_sequence_t;
-  inline constexpr empty_sequence_t empty_sequence{};
+  template <class BufferSequence>
+  auto without_prefix(BufferSequence&& sequence, std::size_t prefix_size) {
+    std::size_t size = sequence.buffer_size();
+    std::size_t rest = prefix_size <= size ? size - prefix_size : 0;
+    return sequence.suffix(rest);
+  }
 }

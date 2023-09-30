@@ -56,8 +56,7 @@ namespace {
       offsets.reserve(read_num_blocks);
       std::uniform_int_distribution<std::size_t> off_dist(0, num_blocks - 1);
       for (std::size_t i = 0; i < read_num_blocks; i++) {
-        buffers.push_back(
-          std::as_writable_bytes(std::span{buffer_data + i * block_size, block_size}));
+        buffers.push_back(sio::mutable_buffer{buffer_data + i * block_size, block_size});
         offsets.push_back(off_dist(rng) * block_size);
       }
     }
@@ -67,7 +66,7 @@ namespace {
     std::size_t file_size;
     std::size_t num_blocks;
     std::unique_ptr<std::byte[], aligned_deleter> buffer_storage{};
-    std::vector<std::span<std::byte>> buffers{};
+    std::vector<sio::mutable_buffer> buffers{};
     std::vector<::off_t> offsets{};
   };
 

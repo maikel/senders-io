@@ -52,9 +52,10 @@ TEST_CASE("zip - with just connects with any_receiver", "[zip]") {
   STATIC_REQUIRE(stdexec::receiver<any_receiver>);
   STATIC_REQUIRE_FALSE(stdexec::sender_to<zip_t, any_receiver>);
   using compls = stdexec::completion_signatures_of_t<zip_t, stdexec::empty_env>;
+  using items = exec::item_types_of_t<zip_t, stdexec::empty_env>;
   using seqs = exec::__sequence_completion_signatures_of_t<zip_t, stdexec::empty_env>;
   STATIC_REQUIRE(stdexec::receiver_of<any_receiver, seqs>);
-  STATIC_REQUIRE(exec::sequence_receiver_of<any_receiver, compls>);
+  STATIC_REQUIRE(exec::sequence_receiver_of<any_receiver, items>);
   STATIC_REQUIRE(exec::sequence_receiver_from<any_receiver, zip_t>);
   STATIC_REQUIRE(exec::sequence_sender_to<zip_t, any_receiver>);
   auto op = exec::subscribe(sender, any_receiver{});
@@ -79,7 +80,7 @@ TEST_CASE("zip - with two justs connects with first", "[zip][first]") {
 TEST_CASE("zip - array with sender", "[zip][iterate]") {
   std::array<int, 2> array{42, 43};
   int count = 0;
-  auto sequence = sio::zip(stdexec::just(42), sio::iterate(std::ranges::views::all(array))) //
+  auto sequence = sio::zip(stdexec::just(42), sio::iterate(std::ranges::views::all(array)))
                 | sio::then_each([&](int v, int w) {
                     ++count;
                     CHECK(v == 42);

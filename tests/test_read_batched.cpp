@@ -1,6 +1,8 @@
 #include <sio/read_batched.hpp>
 #include <sio/io_uring/file_handle.hpp>
 
+#include <sio/buffer.hpp>
+
 #include <exec/when_any.hpp>
 
 #include <catch2/catch.hpp>
@@ -26,10 +28,10 @@ TEST_CASE("read_batched - Read from a file", "[read_batched]") {
   using offset_type = sio::async::offset_type_of_t<decltype(stream)>;
   offset_type offsets[3] = {0, 1024, 2048};
   int values[3] = {};
-  std::span<std::byte> bytes[3] = {
-    std::as_writable_bytes(std::span(&values[0], 1)),
-    std::as_writable_bytes(std::span(&values[1], 1)),
-    std::as_writable_bytes(std::span(&values[2], 1))};
+  sio::mutable_buffer bytes[3] = {
+    sio::mutable_buffer(&values[0], sizeof(int)),
+    sio::mutable_buffer(&values[1], sizeof(int)),
+    sio::mutable_buffer(&values[2], sizeof(int))};
   auto sndr = sio::async::read_batched(stream, bytes, offsets);
   stdexec::sync_wait(exec::when_any(std::move(sndr), context.run()));
   CHECK(values[0] == 42);

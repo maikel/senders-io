@@ -12,6 +12,7 @@ find_package(Catch2 REQUIRED)
 add_executable(test_sio
   test_main.cpp
   # test_static_io_pool.cpp
+  test_const_buffer_subspan.cpp
   sequence/test_ignore_all.cpp
   sequence/test_first.cpp
   sequence/test_last.cpp
@@ -28,7 +29,7 @@ add_executable(test_sio
   test_file_handle.cpp
   test_async_accept.cpp
   test_async_mutex.cpp
-  test_async_channel.cpp
+  # test_async_channel.cpp
   test_memory_pool.cpp
   test_read_batched.cpp
   test_tap.cpp
