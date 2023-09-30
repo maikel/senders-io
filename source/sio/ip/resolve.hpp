@@ -19,18 +19,17 @@
 #define _GNU_SOURCE
 #endif
 
-#include <stdexec/execution.hpp>
-#include <exec/sequence_senders.hpp>
-#include <exec/inline_scheduler.hpp>
-
+#include "../concepts.hpp"
 #include "./address.hpp"
 #include "./endpoint.hpp"
 
-
 #include "../assert.hpp"
-#include "../concepts.hpp"
 #include "../net_concepts.hpp"
 #include "../sequence/sequence_concepts.hpp"
+
+#include <exec/sequence_senders.hpp>
+#include <exec/inline_scheduler.hpp>
+
 
 #include <cstring>
 #include <string>
@@ -324,22 +323,18 @@ namespace sio::async {
       }
     };
 
-    template <class Scheduler, class Env>
-    using __make_completion_signatures = stdexec::__try_make_completion_signatures<
-      decltype(stdexec::on(
-        stdexec::__declval<Scheduler>(),
-        stdexec::just(stdexec::__declval<ip::resolver_result>()))),
-      Env,
-      stdexec::completion_signatures<
-        stdexec::set_value_t(ip::resolver_result),
-        stdexec::set_error_t(std::error_code),
-        stdexec::set_error_t(std::exception_ptr),
-        stdexec::set_stopped_t()>,
-      stdexec::__mconst<stdexec::completion_signatures<>>>;
-
     template <class Scheduler>
     struct sender {
       using is_sender = exec::sequence_tag;
+
+      using completion_signatures = stdexec::completion_signatures<
+        stdexec::set_value_t(),
+        stdexec::set_error_t(std::error_code),
+        stdexec::set_error_t(std::exception_ptr),
+        stdexec::set_stopped_t()>;
+
+      using item_types =
+        exec::item_types<decltype(stdexec::just(std::declval<ip::resolver_result>()))>;
 
       Scheduler scheduler_;
       ip::resolver_query query_;
@@ -352,10 +347,6 @@ namespace sio::async {
           static_cast<ip::resolver_query&&>(self.query_),
           static_cast<Receiver&&>(receiver)};
       }
-
-      template <decays_to<sender> Self, class Env>
-      static auto get_completion_signatures(Self&&, stdexec::get_completion_signatures_t, Env&&)
-        -> __make_completion_signatures<Scheduler, Env>;
     };
 
   } // namespace resolve_

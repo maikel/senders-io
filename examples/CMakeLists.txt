@@ -9,11 +9,15 @@ endif ()
 
 # find_package(fmt REQUIRED)
 
+add_executable(batched_reads 
+  batched_reads.cpp
+  batched_reads_exec.cpp
+  batched_reads_sio.cpp
+  batched_reads_pool.cpp)
+target_link_libraries(batched_reads PRIVATE sio::sio)
+
 add_executable(echo_standard_input echo_standard_input.cpp)
 target_link_libraries(echo_standard_input PRIVATE sio::sio)
 
-add_executable(tcp_echo_server tcp_echo_server.cpp)
-target_link_libraries(tcp_echo_server PRIVATE sio::sio)
-
-add_executable(batched_reads batched_reads.cpp)
-target_link_libraries(batched_reads PRIVATE sio::sio)
+# add_executable(tcp_echo_server tcp_echo_server.cpp)
+# target_link_libraries(tcp_echo_server PRIVATE sio::sio)

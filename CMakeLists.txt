@@ -17,8 +17,11 @@ endif()
 find_package(stdexec REQUIRED)
 
 add_library(sio
-  source/sio/io_uring/buffered_sequence.cpp
+  source/sio/const_buffer_span.cpp
+  source/sio/mutable_buffer_span.cpp
   source/sio/io_uring/file_handle.cpp
+  source/sio/io_uring/io_uring_context.cpp
+  source/sio/io_uring/static_thread_pool.cpp
   source/sio/memory_pool.cpp)
 add_library(sio::sio ALIAS sio)
 target_include_directories(sio
@@ -38,6 +41,7 @@ target_sources(sio PUBLIC
     source/sio/local/stream_protocol.hpp
     source/sio/local/endpoint.hpp
     source/sio/sequence/any_sequence_of.hpp
+    source/sio/sequence/buffered_sequence.hpp
     source/sio/sequence/empty_sequence.hpp
     source/sio/sequence/first.hpp
     source/sio/sequence/fork.hpp
@@ -52,16 +56,20 @@ target_sources(sio PUBLIC
     source/sio/sequence/sequence_concepts.hpp
     source/sio/sequence/then_each.hpp
     source/sio/sequence/transform_each.hpp
-    source/sio/sequence/zip.hpp
-    source/sio/io_uring/buffered_sequence.hpp
+    source/sio/sequence/zip.hpp    
     source/sio/io_uring/file_handle.hpp
+    source/sio/io_uring/io_uring_context.hpp
     source/sio/io_uring/socket_handle.hpp
+    source/sio/io_uring/static_thread_pool.hpp
     source/sio/assert.hpp
     source/sio/async_allocator.hpp
     source/sio/async_channel.hpp
     source/sio/async_mutex.hpp
     source/sio/async_resource.hpp
+    source/sio/buffer_algorithms.hpp
     source/sio/concepts.hpp
+    source/sio/const_buffer_span.hpp
+    source/sio/const_buffer.hpp
     source/sio/deferred.hpp
     source/sio/finally.hpp
     source/sio/intrusive_list.hpp
@@ -70,6 +78,7 @@ target_sources(sio PUBLIC
     source/sio/memory_pool.hpp
     source/sio/net_concepts.hpp
     source/sio/read_batched.hpp
+    source/sio/spmc_queue.hpp
     source/sio/tap.hpp
     source/sio/with_env.hpp)
 target_link_libraries(sio PUBLIC STDEXEC::stdexec)

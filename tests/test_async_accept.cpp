@@ -30,7 +30,6 @@
 #include <exec/when_any.hpp>
 
 #include <catch2/catch.hpp>
-#include <stdexec/execution.hpp>
 #include <sys/socket.h>
 
 using namespace sio;
@@ -44,10 +43,10 @@ TEST_CASE("async_accept concept", "[async_accept]") {
   exec::io_uring_context ctx;
 
   ip::endpoint ep{ip::address_v4::any(), 80};
-  io_uring::acceptor_handle acceptor{ctx, -1, ip::tcp::v4(), ep};
+  io_uring::acceptor_handle<ip::tcp> acceptor{ctx, -1, ip::tcp::v4(), ep};
 
   auto sequence = sio::async::accept(acceptor);
-  STATIC_REQUIRE(exec::sequence_sender<decltype(sequence)>);
+  STATIC_REQUIRE(exec::sequence_sender<decltype(sequence), stdexec::no_env>);
 
   auto op = exec::subscribe(std::move(sequence), any_receiver{});
   STATIC_REQUIRE(stdexec::operation_state<decltype(op)>);
@@ -64,11 +63,13 @@ TEST_CASE("async_accept should work", "[async_accept]") {
 
   exec::io_uring_context ctx;
 
-  io_uring::acceptor acceptor(&ctx, ip::tcp::v4(), ip::endpoint{ip::address_v4::any(), 1080});
+  io_uring::acceptor<ip::tcp> acceptor(
+    ctx, ip::tcp::v4(), ip::endpoint{ip::address_v4::any(), 1080});
+
   stdexec::sender auto accept = sio::async::use_resources(
     [](auto acceptor) { return ignore_all(sio::async::accept(acceptor)); }, acceptor);
 
-  sio::io_uring::socket sock(&ctx, ip::tcp::v4());
+  io_uring::socket<ip::tcp> sock(&ctx, ip::tcp::v4());
   stdexec::sender auto connect = async::use_resources(
     [](auto client) {
       return sio::async::connect(client, ip::endpoint{ip::address_v4::loopback(), 1080});

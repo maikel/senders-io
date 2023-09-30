@@ -15,6 +15,11 @@
  */
 #pragma once
 
+#include "./assert.hpp"
+#include "./async_allocator.hpp"
+#include "./concepts.hpp"
+#include "./intrusive_list.hpp"
+
 #include <array>
 #include <atomic>
 #include <cstring>
@@ -23,17 +28,9 @@
 #include <system_error>
 #include <variant>
 
-#include "./assert.hpp"
-#include "./async_allocator.hpp"
-#include "./concepts.hpp"
-#include "./intrusive_list.hpp"
-
-#include <stdexec/execution.hpp>
-#include <exec/finally.hpp>
-
 namespace sio {
   class memory_resource {
-    static constexpr size_t _S_max_align = alignof(max_align_t);
+    static constexpr size_t max_align = alignof(max_align_t);
 
    public:
     memory_resource() = default;
@@ -42,16 +39,12 @@ namespace sio {
 
     memory_resource& operator=(const memory_resource&) = default;
 
-    [[nodiscard]] void* allocate(size_t __bytes, size_t __alignment = _S_max_align) noexcept {
-      void* ptr = do_allocate(__bytes, __alignment);
-      if (ptr) {
-        return ::operator new(__bytes, do_allocate(__bytes, __alignment));
-      }
-      return nullptr;
+    [[nodiscard]] void* allocate(size_t bytes, size_t alignment = max_align) noexcept {
+      return ::operator new(bytes, do_allocate(bytes, alignment));
     }
 
-    void deallocate(void* __p, size_t __bytes, size_t __alignment = _S_max_align) noexcept {
-      return do_deallocate(__p, __bytes, __alignment);
+    void deallocate(void* p, size_t bytes, size_t alignment = max_align) noexcept {
+      return do_deallocate(p, bytes, alignment);
     }
 
     [[nodiscard]] bool is_equal(const memory_resource& __other) const noexcept {
@@ -59,9 +52,9 @@ namespace sio {
     }
 
    private:
-    virtual void* do_allocate(size_t __bytes, size_t __alignment) noexcept = 0;
+    virtual void* do_allocate(size_t bytes, size_t alignment) noexcept = 0;
 
-    virtual void do_deallocate(void* __p, size_t __bytes, size_t __alignment) noexcept = 0;
+    virtual void do_deallocate(void* p, size_t bytes, size_t alignment) noexcept = 0;
 
     virtual bool do_is_equal(const memory_resource& __other) const noexcept = 0;
   };
@@ -70,12 +63,12 @@ namespace sio {
     struct type : memory_resource {
       type() = default;
 
-      void* do_allocate(size_t __bytes, size_t __alignment) noexcept override {
-        return ::operator new(__bytes, std::align_val_t(__alignment));
+      void* do_allocate(size_t bytes, size_t alignment) noexcept override {
+        return ::operator new(bytes, std::align_val_t(alignment));
       }
 
-      void do_deallocate(void* __p, size_t, size_t) noexcept override {
-        ::operator delete(__p);
+      void do_deallocate(void* p, size_t, size_t) noexcept override {
+        ::operator delete(p);
       }
 
       bool do_is_equal(const memory_resource& __other) const noexcept override {
@@ -294,7 +287,7 @@ namespace sio {
             stdexec::then(
               stdexec::just(),
               [... args = std::move(args), ptr]() mutable {
-                return new (ptr) T(std::move(args)...);
+                return std::launder(new (ptr) T(std::move(args)...));
               }),
             [ptr, this](std::exception_ptr e) {
               return stdexec::let_value(pool_->deallocate(ptr), [e = std::move(e)] {

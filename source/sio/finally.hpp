@@ -1,7 +1,5 @@
 #pragma once
 
-#include <stdexec/execution.hpp>
-
 #include "./concepts.hpp"
 #include "./sequence/sequence_concepts.hpp"
 
@@ -110,14 +108,15 @@ namespace sio {
       }
 
       template <decays_to<sequence> Self, class Env>
+      static auto get_item_types(Self&&, exec::get_item_types_t, Env&&)
+        -> exec::item_types_of_t<copy_cvref_t<Self, InitialSender>, Env>;
+
+      template <decays_to<sequence> Self, class Env>
       static auto get_completion_signatures(Self&&, stdexec::get_completion_signatures_t, Env&&)
-        -> stdexec::__concat_completion_signatures_t<
-          stdexec::completion_signatures_of_t<copy_cvref_t<Self, InitialSender>, Env>,
-          stdexec::__try_make_completion_signatures<
-            FinalSender,
-            Env,
-            stdexec::completion_signatures<>,
-            stdexec::__mconst<stdexec::completion_signatures<>>>>;
+        -> stdexec::make_completion_signatures<
+          copy_cvref_t<Self, FinalSender>,
+          Env,
+          stdexec::completion_signatures<stdexec::set_stopped_t()>>;
     };
 
     struct finally_t {

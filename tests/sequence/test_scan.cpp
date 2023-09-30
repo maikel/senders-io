@@ -37,13 +37,13 @@ TEST_CASE("scan - with just sender and back binder", "[sequence][scan][last]") {
 TEST_CASE("scan - with iterate", "[sequence][scan][last][iterate]") {
   std::array<int, 3> arr{1, 2, 3};
   auto iterate = sio::iterate(std::ranges::views::all(arr));
-  STATIC_REQUIRE(exec::sequence_sender<decltype(iterate)>);
+  STATIC_REQUIRE(exec::sequence_sender<decltype(iterate), stdexec::no_env>);
   auto scan = sio::scan(sio::iterate(std::ranges::views::all(arr)), 0);
   using Scan = decltype(scan);
   // stdexec::__types<Scan> {};
   // using sigs = decltype(stdexec::get_completion_signatures(scan, stdexec::empty_env{}));
   STATIC_REQUIRE(stdexec::sender_in<Scan, stdexec::empty_env>);
-  STATIC_REQUIRE(exec::sequence_sender<Scan>);
+  STATIC_REQUIRE(exec::sequence_sender<Scan, stdexec::no_env>);
   // using sigs = stdexec::completion_signatures_of_t<decltype(scan), stdexec::empty_env>;
   // stdexec::__types<sigs> {};
   // STATIC_REQUIRE(stdexec::sender<Scan>);

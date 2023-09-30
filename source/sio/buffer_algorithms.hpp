@@ -13,12 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#pragma once
-
-#include "../concepts.hpp"
-#include <exec/sequence/ignore_all_values.hpp>
+#include <cstddef>
 
 namespace sio {
-  using exec::ignore_all_values_t;
-  inline constexpr ignore_all_values_t ignore_all{};
+  template <class BufferSequence>
+  auto without_prefix(BufferSequence&& sequence, std::size_t prefix_size) {
+    std::size_t size = sequence.buffer_size();
+    std::size_t rest = prefix_size <= size ? size - prefix_size : 0;
+    return sequence.suffix(rest);
+  }
 }

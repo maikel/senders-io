@@ -272,7 +272,14 @@ namespace sio::async {
         -> stdexec::make_completion_signatures<
           open_sender_of_t<Resource>,
           Env,
-          stdexec::completion_signatures<stdexec::set_error_t(std::exception_ptr)>>;
+          stdexec::completion_signatures<stdexec::set_error_t(std::exception_ptr)>,
+          stdexec::__mconst<stdexec::completion_signatures<>>::__f>;
+
+      template <class Env>
+      auto get_item_types(exec::get_item_types_t, Env&&) const noexcept
+        -> exec::item_types<use_sender<token_of_t<Resource, Env>>> {
+        return {};
+      }
     };
 
     struct use_t;
@@ -320,9 +327,16 @@ namespace sio::async {
   template <class Resource>
   concept resource = requires(Resource&& __resource) { use(__resource); };
 
+  template <class _Sequence, class _Env>
+  using single_item_value_t = stdexec::__gather_signal<
+    stdexec::set_value_t,
+    exec::item_completion_signatures_of_t<_Sequence, _Env>,
+    stdexec::__msingle_or<void>,
+    stdexec::__q<stdexec::__msingle>>;
+
+
   template <resource Resource, class Env = stdexec::empty_env>
-  using resource_token_of_t =
-    stdexec::__single_sender_value_t< call_result_t<use_t, Resource&>, Env>;
+  using resource_token_of_t = decay_t<single_item_value_t<call_result_t<use_t, Resource&>, Env>>;
 
   struct use_resources_t {
     template <class Fn, class... DeferredResources>

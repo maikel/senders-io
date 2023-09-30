@@ -132,11 +132,18 @@ namespace sio {
       }
     };
 
+    template <class _Sequence, class _Env>
+    using single_item_value_t = stdexec::__gather_signal<
+      stdexec::set_value_t,
+      exec::item_completion_signatures_of_t<_Sequence, _Env>,
+      stdexec::__msingle_or<void>,
+      stdexec::__q<stdexec::__msingle>>;
+
     template <class Env, class... Senders>
     concept sequence_factory =                                              //
       sizeof...(Senders) == 1 &&                                            //
       stdexec::__single_typed_sender<stdexec::__mfront<Senders...>, Env> && //
-      exec::sequence_sender_in<stdexec::__single_sender_value_t<stdexec::__mfront<Senders...>>, Env>;
+      exec::sequence_sender_in<single_item_value_t<stdexec::__mfront<Senders...>, Env>, Env>;
 
     template <class ItemReceiver, class Receiver, class ErrorsVariant>
     struct dynamic_item_operation_base {
@@ -188,10 +195,11 @@ namespace sio {
       subsequence_operation(
         ItemReceiver item_receiver,
         operation_base<Receiver, ErrorsVariant>* parent)
-        : dynamic_item_operation_base< ItemReceiver, Receiver, ErrorsVariant>{
-          static_cast<ItemReceiver&&>(item_receiver),
-          parent} {
+        : dynamic_item_operation_base< ItemReceiver, Receiver, ErrorsVariant> {
+        static_cast<ItemReceiver&&>(item_receiver), parent
       }
+
+      { }
     };
 
     template <class Item, class ItemReceiver, class Receiver, class ErrorsVariant>
@@ -348,7 +356,7 @@ namespace sio {
 
       template <class Self, class Env>
       using value_type_t =
-        stdexec::__single_sender_value_t<copy_cvref_t<Self, stdexec::__mfront<Senders...>>, Env>;
+        single_item_value_t<copy_cvref_t<Self, stdexec::__mfront<Senders...>>, Env>;
 
       std::tuple<Senders...> senders_;
 
@@ -378,12 +386,23 @@ namespace sio {
         requires(!sequence_factory<Env, copy_cvref_t<Self, Senders>...>)
       static auto get_completion_signatures(Self&&, stdexec::get_completion_signatures_t, Env&&)
         -> stdexec::__concat_completion_signatures_t<
-          stdexec::completion_signatures_of_t<copy_cvref_t<Self, Senders>, Env>...>;
+          exec::__to_sequence_completion_signatures<copy_cvref_t<Self, Senders>, Env>...>;
 
       template <decays_to<sender> Self, class Env>
         requires sequence_factory<Env, copy_cvref_t<Self, Senders>...>
       static auto get_completion_signatures(Self&&, stdexec::get_completion_signatures_t, Env&&)
-        -> stdexec::completion_signatures_of_t<value_type_t<Self, Env>, Env>;
+        -> exec::__to_sequence_completion_signatures<value_type_t<Self, Env>, Env>;
+
+      template <decays_to<sender> Self, class Env>
+        requires(!sequence_factory<Env, copy_cvref_t<Self, Senders>...>)
+      static auto get_item_types(Self&&, exec::get_item_types_t, Env&&) -> stdexec::__minvoke<
+        stdexec::__mconcat<stdexec::__q<exec::item_types>>,
+        exec::item_types_of_t<copy_cvref_t<Self, Senders>, Env>...>;
+
+      template <decays_to<sender> Self, class Env>
+        requires sequence_factory<Env, copy_cvref_t<Self, Senders>...>
+      static auto get_item_types(Self&&, exec::get_item_types_t, Env&&)
+        -> exec::item_types_of_t<value_type_t<Self, Env>, Env>;
     };
 
     struct merge_each_t {

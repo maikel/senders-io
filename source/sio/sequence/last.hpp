@@ -220,7 +220,11 @@ namespace sio {
       gather_types<set_stopped_t, Sigs>>;
 
     template <class Sender, class Env>
-    using result_variant_t = result_variant_<completion_signatures_of_t<Sender, Env>>;
+    using completion_signatures_t =
+      exec::__concat_item_signatures_t<exec::item_types_of_t<Sender, Env>, Env>;
+
+    template <class Sender, class Env>
+    using result_variant_t = result_variant_<completion_signatures_t<Sender, Env>>;
 
     template <class Sender, class Receiver>
     struct operation
@@ -276,19 +280,19 @@ namespace sio {
       template <class Env>
       auto get_completion_signatures(get_completion_signatures_t, Env&&)
         -> __concat_completion_signatures_t<
-          completion_signatures_of_t<Sequence, Env>,
+          exec::__concat_item_signatures_t<exec::item_types_of_t<Sequence, Env>, Env>,
           completion_signatures<set_stopped_t()>>;
     };
 
     struct last_t {
-      template <exec::sequence_sender Sender>
+      template <exec::sequence_sender<stdexec::no_env> Sender>
       auto operator()(Sender&& seq) const noexcept(nothrow_decay_copyable<Sender>) ->
         typename sender<__decay_t<Sender>>::type {
         return {static_cast<Sender&&>(seq)};
       }
 
       template <stdexec::sender Sender>
-        requires(!exec::sequence_sender<Sender>)
+        requires(!exec::sequence_sender<Sender, stdexec::no_env>)
       auto operator()(Sender&& sndr) const noexcept {
         return static_cast<Sender&&>(sndr);
       }

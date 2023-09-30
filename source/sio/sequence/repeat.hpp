@@ -87,10 +87,19 @@ namespace sio {
       using is_sender = exec::sequence_tag;
 
       template <class Self, class Env>
-      static auto get_completion_signatures(Self&&, stdexec::get_completion_signatures_t, Env&&)
+      static auto
+        get_completion_signatures(Self&&, stdexec::get_completion_signatures_t, Env&&) noexcept
         -> stdexec::__concat_completion_signatures_t<
           stdexec::__with_exception_ptr,
-          stdexec::completion_signatures_of_t<Sender, Env>>;
+          stdexec::make_completion_signatures<
+            Sender,
+            Env,
+            stdexec::completion_signatures<stdexec::set_stopped_t()>,
+            stdexec::__mconst<stdexec::completion_signatures<>>::__f>>;
+
+      template <class Self, class Env>
+      static auto get_item_types(Self&&, exec::get_item_types_t, Env&&) noexcept
+        -> exec::item_types_of_t<Sender, Env>;
 
       template <decays_to<sequence> Self, class Rcvr>
       static operation<Sender, Rcvr> subscribe(Self&& self, exec::subscribe_t, Rcvr rcvr) {
