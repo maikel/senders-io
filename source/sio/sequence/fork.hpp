@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../concepts.hpp"
 #include "../async_allocator.hpp"
 #include "./sequence_concepts.hpp"
 

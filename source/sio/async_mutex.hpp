@@ -15,12 +15,13 @@
  */
 #pragma once
 
-#include <atomic>
-
+#include "./concepts.hpp"
 #include "./intrusive_queue.hpp"
 
 #include <exec/__detail/__atomic_intrusive_queue.hpp>
 #include <exec/any_sender_of.hpp>
+
+#include <atomic>
 
 namespace sio {
   namespace mutex_ {

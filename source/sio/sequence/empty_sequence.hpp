@@ -15,6 +15,7 @@
  */
 #pragma once
 
+#include "../concepts.hpp"
 #include <exec/sequence/empty_sequence.hpp>
 
 namespace sio {

@@ -30,7 +30,6 @@
 #include <exec/when_any.hpp>
 
 #include <catch2/catch.hpp>
-#include <stdexec/execution.hpp>
 #include <sys/socket.h>
 
 using namespace sio;

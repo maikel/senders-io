@@ -19,18 +19,17 @@
 #define _GNU_SOURCE
 #endif
 
-#include <stdexec/execution.hpp>
-#include <exec/sequence_senders.hpp>
-#include <exec/inline_scheduler.hpp>
-
+#include "../concepts.hpp"
 #include "./address.hpp"
 #include "./endpoint.hpp"
 
-
 #include "../assert.hpp"
-#include "../concepts.hpp"
 #include "../net_concepts.hpp"
 #include "../sequence/sequence_concepts.hpp"
+
+#include <exec/sequence_senders.hpp>
+#include <exec/inline_scheduler.hpp>
+
 
 #include <cstring>
 #include <string>
