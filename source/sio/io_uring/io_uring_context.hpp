@@ -15,10 +15,10 @@
  */
 #pragma once
 
-#include <exec/linux/io_uring_context.hpp>
-
 #include "../concepts.hpp"
 #include "../spmc_queue.hpp"
+
+#include <exec/linux/io_uring_context.hpp>
 
 namespace sio::io_uring {
   using task = exec::__io_uring::__task;

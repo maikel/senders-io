@@ -16,8 +16,6 @@
 #pragma once
 
 #include "./concepts.hpp"
-
-#include <stdexec/execution.hpp>
 #include <exec/env.hpp>
 
 namespace sio {

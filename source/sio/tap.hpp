@@ -1,7 +1,5 @@
 #pragma once
 
-#include <stdexec/execution.hpp>
-
 #include "./concepts.hpp"
 #include "./sequence/sequence_concepts.hpp"
 

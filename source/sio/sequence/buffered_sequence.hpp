@@ -22,8 +22,6 @@
 #include "../concepts.hpp"
 #include "../sequence/sequence_concepts.hpp"
 
-#include <stdexec/execution.hpp>
-
 #include <exec/linux/io_uring_context.hpp>
 
 #include <span>

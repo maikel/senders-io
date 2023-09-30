@@ -15,6 +15,11 @@
  */
 #pragma once
 
+#include "./assert.hpp"
+#include "./async_allocator.hpp"
+#include "./concepts.hpp"
+#include "./intrusive_list.hpp"
+
 #include <array>
 #include <atomic>
 #include <cstring>
@@ -22,13 +27,6 @@
 #include <span>
 #include <system_error>
 #include <variant>
-
-#include "./assert.hpp"
-#include "./async_allocator.hpp"
-#include "./concepts.hpp"
-#include "./intrusive_list.hpp"
-
-#include <stdexec/execution.hpp>
 
 namespace sio {
   class memory_resource {
