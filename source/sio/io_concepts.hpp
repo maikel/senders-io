@@ -18,7 +18,6 @@
 #include "./async_resource.hpp"
 #include "./concepts.hpp"
 
-#include <stdexec/execution.hpp>
 #include <exec/timed_scheduler.hpp>
 
 #include <filesystem>

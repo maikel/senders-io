@@ -16,8 +16,6 @@
 #pragma once
 
 #include "./sequence_concepts.hpp"
-
-#include "../concepts.hpp"
 #include "../intrusive_queue.hpp"
 
 #include <optional>
