@@ -19,5 +19,5 @@ target_link_libraries(batched_reads PRIVATE sio::sio)
 add_executable(echo_standard_input echo_standard_input.cpp)
 target_link_libraries(echo_standard_input PRIVATE sio::sio)
 
-# add_executable(tcp_echo_server tcp_echo_server.cpp)
-# target_link_libraries(tcp_echo_server PRIVATE sio::sio)
+add_executable(tcp_echo_server tcp_echo_server.cpp)
+target_link_libraries(tcp_echo_server PRIVATE sio::sio)

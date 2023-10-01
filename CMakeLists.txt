@@ -84,6 +84,11 @@ target_sources(sio PUBLIC
 target_link_libraries(sio PUBLIC STDEXEC::stdexec)
 target_compile_features(sio PUBLIC cxx_std_20)
 
+option(STDEXEC_ENABLE_EXTRA_TYPE_CHECKING "Enable extra type checking that is costly at compile-time" OFF)
+if (STDEXEC_ENABLE_EXTRA_TYPE_CHECKING)
+    target_compile_definitions(stdexec INTERFACE STDEXEC_ENABLE_EXTRA_TYPE_CHECKING)
+endif()
+
 option(BUILD_TESTING "Build tests" ON)
 if (BUILD_TESTING)
   add_subdirectory(tests)
