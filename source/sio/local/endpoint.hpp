@@ -15,6 +15,7 @@
  */
 #pragma once
 
+#include <sys/socket.h>
 #include <sys/un.h>
 
 #include <cstring>
@@ -26,8 +27,7 @@ namespace sio::local {
     using native_handle_type = ::sockaddr_un;
 
     explicit endpoint(std::string_view path)
-    : addr_{.sun_family = AF_LOCAL}
-    {
+      : addr_{.sun_family = AF_LOCAL} {
       auto len = std::min(path.size(), sizeof(addr_.sun_path) - 1);
       std::memcpy(addr_.sun_path, path.data(), len);
       addr_.sun_path[len] = '\0';

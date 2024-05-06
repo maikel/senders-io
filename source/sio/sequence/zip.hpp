@@ -15,10 +15,15 @@
  */
 #pragma once
 
+#include <optional>
+#include <stdexec/functional.hpp>
+#include <utility>
+
+#include <stdexec/execution.hpp>
+#include <exec/__detail/__basic_sequence.hpp>
+
 #include "./sequence_concepts.hpp"
 #include "../intrusive_queue.hpp"
-
-#include <optional>
 
 namespace sio {
   namespace zip_ {
@@ -36,7 +41,7 @@ namespace sio {
       std::tuple<intrusive_queue<&item_operation_result<Results>::next_>...>;
 
     struct on_stop_requested {
-      in_place_stop_source& stop_source_;
+      inplace_stop_source& stop_source_;
 
       void operator()() const noexcept {
         stop_source_.request_stop();
@@ -56,7 +61,7 @@ namespace sio {
       mutexes_t mutexes_{};
       queues_t item_queues_{};
       std::atomic<int> n_ready_next_items_{};
-      in_place_stop_source stop_source_{};
+      inplace_stop_source stop_source_{};
       std::optional<on_stop> stop_callback_{};
       std::atomic<int> n_pending_operations_{std::tuple_size_v<ResultTuple>};
 
@@ -118,31 +123,38 @@ namespace sio {
       using item_ops = __mapply<__transform<__q<to_item_result>, __q<std::tuple>>, ResultTuple>;
 
       operation_base<Receiver, ResultTuple, ErrorsVariant>* sequence_op_;
-      std::optional<item_ops> items_{};
+      std::optional<item_ops> item_ops_{};
 
       void complete_all_item_ops() noexcept {
         std::apply(
           [&]<class... Ts>(item_operation_result<Ts>*... item_ops) {
             (item_ops->complete_(item_ops), ...);
           },
-          *items_);
+          *item_ops_);
       }
     };
 
+
+    template <class Env>
+    using env_with_stop_token = decltype(exec::make_env(
+      __declval<Env>(),
+      exec::with(get_stop_token, __declval<inplace_stop_token>())));
+
     template <class Receiver, class ResultTuple, class ErrorsVariant>
     struct zipped_receiver {
+      using receiver_concept = stdexec::receiver_t;
       zipped_operation_base<Receiver, ResultTuple, ErrorsVariant>* op_;
 
-      void set_value(stdexec::set_value_t) && noexcept {
+      void set_value() && noexcept {
         op_->complete_all_item_ops();
       }
 
-      void set_stopped(stdexec::set_stopped_t) && noexcept {
+      void set_stopped() && noexcept {
         op_->sequence_op_->notify_stop();
         op_->complete_all_item_ops();
       }
 
-      auto get_env(stdexec::get_env_t) const noexcept {
+      auto get_env() const noexcept -> env_with_stop_token<env_of_t<Receiver>> {
         return exec::make_env(
           stdexec::get_env(op_->sequence_op_->receiver_),
           exec::with(get_stop_token, op_->sequence_op_->stop_source_.get_token()));
@@ -168,7 +180,8 @@ namespace sio {
       : item_operation_result<std::tuple_element_t<Index, ResultTuple>>
       , zipped_operation_base<Receiver, ResultTuple, ErrorsVariant> {
 
-      using base_t = item_operation_result<std::tuple_element_t<Index, ResultTuple>>;
+      using item_base_t = item_operation_result<std::tuple_element_t<Index, ResultTuple>>;
+      using zipped_base_t = zipped_operation_base<Receiver, ResultTuple, ErrorsVariant>;
 
       [[no_unique_address]] ItemReceiver item_receiver_;
       std::optional<stdexec::connect_result_t<
@@ -176,8 +189,8 @@ namespace sio {
         zipped_receiver<Receiver, ResultTuple, ErrorsVariant>>>
         zipped_op_{};
 
-      static void complete(base_t* base) noexcept {
-        item_operation_base* self = static_cast<item_operation_base*>(base);
+      static void complete(item_base_t* base) noexcept {
+        auto* self = static_cast<item_operation_base*>(base);
         if (self->sequence_op_->stop_source_.stop_requested()) {
           stdexec::set_stopped(static_cast<ItemReceiver&&>(self->item_receiver_));
         } else {
@@ -188,8 +201,8 @@ namespace sio {
       item_operation_base(
         ItemReceiver rcvr,
         operation_base<Receiver, ResultTuple, ErrorsVariant>* sequence_op) noexcept
-        : item_operation_result<std::tuple_element_t<Index, ResultTuple>>{{}, {}, &complete}
-        , zipped_operation_base<Receiver, ResultTuple, ErrorsVariant>{sequence_op}
+        : item_base_t{{}, {}, &complete}
+        , zipped_base_t{sequence_op}
         , item_receiver_(static_cast<ItemReceiver&&>(rcvr)) {
       }
 
@@ -205,6 +218,7 @@ namespace sio {
           1, std::memory_order_relaxed);
         lock.unlock();
         if (n_ready_next_items == n_results - 1) {
+
           // 1. Collect all results and assemble one big tuple
           concat_result_types<ResultTuple> result = std::apply(
             [&](auto&... mutexes) {
@@ -221,7 +235,7 @@ namespace sio {
           std::apply(
             [&](auto&... mutexes) {
               std::scoped_lock lock(mutexes...);
-              this->items_.emplace(std::apply(
+              this->item_ops_.emplace(std::apply(
                 [](auto&... queues) { return std::tuple{queues.pop_front()...}; },
                 sequence_op->item_queues_));
               sequence_op->n_ready_next_items_.store(-1, std::memory_order_relaxed);
@@ -239,7 +253,6 @@ namespace sio {
           // So we need to check whether there is outstanding work before we start the zipped operation.
           // Since there is no other candidate to complete the ready items, we can safely assume that
           // we will be the one to start the next zipped operation, too.
-
           bool is_next_completion = false;
           std::apply(
             [&](auto&... mutexes) {
@@ -291,10 +304,12 @@ namespace sio {
       class ResultTuple,
       class ErrorsVariant>
     struct item_receiver {
+      using receiver_concept = stdexec::receiver_t;
+
       item_operation_base<Index, ItemReceiver, Receiver, ResultTuple, ErrorsVariant>* op_;
 
       template <class... Ts>
-      void set_value(stdexec::set_value_t, Ts&&... args) && noexcept {
+      void set_value(Ts&&... args) && noexcept {
         try {
           op_->result_.emplace(static_cast<Ts&&>(args)...);
         } catch (...) {
@@ -308,18 +323,18 @@ namespace sio {
         }
       }
 
-      void set_stopped(stdexec::set_stopped_t) && noexcept {
+      void set_stopped() && noexcept {
         op_->sequence_op_->notify_stop();
         stdexec::set_stopped(static_cast<ItemReceiver&&>(op_->item_receiver_));
       }
 
       template <class Error>
-      void set_error(stdexec::set_error_t, Error&& error) && noexcept {
+      void set_error(Error&& error) && noexcept {
         op_->sequence_op_->notify_error(static_cast<Error&&>(error));
         stdexec::set_stopped(static_cast<ItemReceiver&&>(op_->item_receiver_));
       }
 
-      env_of_t<ItemReceiver> get_env(stdexec::get_env_t) const noexcept {
+      auto get_env() const noexcept -> env_of_t<ItemReceiver> {
         return stdexec::get_env(op_->item_receiver_);
       }
     };
@@ -333,66 +348,55 @@ namespace sio {
       class ErrorsVariant>
     struct item_operation
       : item_operation_base<Index, ItemReceiver, Receiver, ResultTuple, ErrorsVariant> {
+      using base_type =
+        item_operation_base<Index, ItemReceiver, Receiver, ResultTuple, ErrorsVariant>;
       using item_receiver_t =
         item_receiver<Index, ItemReceiver, Receiver, ResultTuple, ErrorsVariant>;
+
       stdexec::connect_result_t<Item, item_receiver_t> item_op_;
 
       item_operation(
         Item&& item,
         ItemReceiver&& item_receiver,
         operation_base<Receiver, ResultTuple, ErrorsVariant>* sequence_op)
-        : item_operation_base<
-          Index,
-          ItemReceiver,
-          Receiver,
-          ResultTuple,
-          ErrorsVariant>{static_cast<ItemReceiver&&>(item_receiver), sequence_op}
+        : base_type{static_cast<ItemReceiver&&>(item_receiver), sequence_op}
         , item_op_{stdexec::connect(static_cast<Item&&>(item), item_receiver_t{this})} {
       }
 
-      void start(stdexec::start_t) noexcept {
+      void start() noexcept {
         stdexec::start(item_op_);
       }
     };
 
     template <std::size_t Index, class Item, class Receiver, class ResultTuple, class ErrorsVariant>
     struct item_sender {
-      struct type;
-    };
+      using sender_concept = stdexec::sender_t;
 
-    template <std::size_t Index, class Item, class Receiver, class ResultTuple, class ErrorsVariant>
-    struct item_sender<Index, Item, Receiver, ResultTuple, ErrorsVariant>::type {
-      using is_sender = void;
       [[no_unique_address]] Item item_;
       operation_base<Receiver, ResultTuple, ErrorsVariant>* op_;
 
       using completion_signatures = stdexec::completion_signatures<set_value_t(), set_stopped_t()>;
 
-      template <same_as<type> Self, class ItemReceiver>
-      static auto connect(Self&& self, stdexec::connect_t, ItemReceiver item_rcvr)
-        -> item_operation<
-          Index,
-          copy_cvref_t<Self, Item>,
-          ItemReceiver,
-          Receiver,
-          ResultTuple,
-          ErrorsVariant> {
-        return {static_cast<Self&&>(self).item_, static_cast<ItemReceiver&&>(item_rcvr), self.op_};
+      template <class ItemReceiver>
+      auto connect(ItemReceiver item_rcvr)
+        -> item_operation< Index, Item, ItemReceiver, Receiver, ResultTuple, ErrorsVariant> {
+        return {static_cast<Item&&>(item_), static_cast<ItemReceiver&&>(item_rcvr), op_};
       }
     };
 
     template <std::size_t Index, class Receiver, class ResultTuple, class ErrorsVariant>
     struct receiver {
-      using is_receiver = void;
+      using receiver_concept = stdexec::receiver_t;
       operation_base<Receiver, ResultTuple, ErrorsVariant>* op_;
 
       template <class Item>
-      auto set_next(exec::set_next_t, Item&& item) noexcept(nothrow_decay_copyable<Item>) ->
-        typename item_sender<Index, decay_t<Item>, Receiver, ResultTuple, ErrorsVariant>::type {
-        return {static_cast<Item&&>(item), op_};
+      friend auto tag_invoke(exec::set_next_t, receiver& self, Item&& item) noexcept(
+        nothrow_decay_copyable<Item>)
+        -> item_sender<Index, decay_t<Item>, Receiver, ResultTuple, ErrorsVariant> {
+        return {static_cast<Item&&>(item), self.op_};
       }
 
-      void set_value(stdexec::set_value_t) && noexcept {
+      void set_value() && noexcept {
         int n_ops = op_->n_pending_operations_.fetch_sub(1, std::memory_order_relaxed);
         if (n_ops > 1) {
           op_->notify_stop();
@@ -415,7 +419,7 @@ namespace sio {
         }
       }
 
-      void set_stopped(stdexec::set_stopped_t) && noexcept {
+      void set_stopped() && noexcept {
         int n_ops = op_->n_pending_operations_.fetch_sub(1, std::memory_order_relaxed);
         if (n_ops > 1) {
           op_->notify_stop();
@@ -430,7 +434,7 @@ namespace sio {
       }
 
       template <class Error>
-      void set_error(stdexec::set_error_t, Error&& error) && noexcept {
+      void set_error(Error&& error) && noexcept {
         int n_ops = op_->n_pending_operations_.fetch_sub(1, std::memory_order_relaxed);
         if (n_ops > 1) {
           op_->notify_error(static_cast<Error&&>(error));
@@ -440,7 +444,7 @@ namespace sio {
         stdexec::set_error(static_cast<Receiver&&>(op_->receiver_), static_cast<Error&&>(error));
       }
 
-      auto get_env(stdexec::get_env_t) const noexcept {
+      auto get_env() const noexcept -> env_with_stop_token<env_of_t<Receiver>> {
         return exec::make_env(
           stdexec::get_env(op_->receiver_),
           exec::with(get_stop_token, op_->stop_source_.get_token()));
@@ -448,79 +452,52 @@ namespace sio {
     };
 
 
-    template <class Tp>
-    using decay_rvalue_ref = decay_t<Tp>&&;
-
-    template <class Sender, class Env>
-    concept max1_sender =
-      sender_in<Sender, Env>
-      && __mvalid<__value_types_of_t, Sender, Env, __mconst<int>, __msingle_or<void>>;
-
-    template <class Env, class Sender>
-    using single_values_of_t = //
-      __value_types_of_t<Sender, Env, __transform<__q<decay_t>, __q<__types>>, __q<__msingle>>;
-
-    template <class Env>
-    using env_t = decltype(exec::make_env(
-      __declval<Env>(),
-      exec::with(get_stop_token, __declval<in_place_stop_token>())));
-
     template <class Env, class Sender>
     using values_tuple_t = //
-      __value_types_of_t<Sender, env_t<Env>, __q<__decayed_tuple>, __q<__msingle>>;
+      __value_types_of_t<Sender, env_with_stop_token<Env>, __q<std::tuple>, __q<__msingle>>;
 
     template <class Env, class... Senders>
     using all_items_t = __minvoke< __mconcat<>, exec::item_types_of_t<Senders, Env>...>;
-
 
     template <class Env, class... Senders>
     using result_tuple_t = __mapply<
       __transform<__mbind_front_q<values_tuple_t, Env>, __q<std::tuple>>,
       all_items_t<Env, Senders...>>;
 
-
-    template <class Env, class... Senders>
-    using error_types_items_t = __mapply<
-      __mconcat<>,
-      __mapply<
-        __transform<__mbind_back_q<__error_types_of_t, env_t<Env>, __q<__types>>>,
-        all_items_t<Env, Senders...>>>;
-
-    template <class Env, class... Senders>
-    using error_types_t = __minvoke<
-      __mconcat<__transform<__q<decay_t>, __nullable_variant_t>>,
-      __types<std::exception_ptr>,
-      error_types_items_t<Env, Senders...>,
-      error_types_of_t<Senders, env_t<Env>, __types>...>;
-
-
-    template <class Env, class... Senders>
-    using set_values_sig_t = //
-      completion_signatures<
-        __minvoke< __mconcat<__qf<set_value_t>>, single_values_of_t<Env, Senders>...>>;
-
-    template <class Env, class... Senders>
-    using completions_t = //
-      __concat_completion_signatures_t<
-        completion_signatures<set_value_t(), set_stopped_t(), set_error_t(std::exception_ptr)>,
-        __try_make_completion_signatures<
-          Senders,
-          Env,
-          completion_signatures<>,
-          __mconst<completion_signatures<>>,
-          __mcompose<__q<completion_signatures>, __qf<set_error_t>, __q<decay_t>>>...>;
-
     template <class Receiver, class... Senders>
     struct traits {
-      using result_tuple = result_tuple_t<env_of_t<Receiver>, Senders...>;
+      using env_of_receiver = env_of_t<Receiver>;
+      using result_tuple = result_tuple_t<env_of_receiver, Senders...>;
 
-      using errors_variant = //
-        error_types_t<env_of_t<Receiver>, Senders...>;
+      using error_types_items_t = __mapply<
+        __mconcat<>,
+        __mapply<
+          __transform<__mbind_back_q<
+            stdexec::__error_types_of_t,
+            env_with_stop_token<env_of_receiver>,
+            __q<__types>>>,
+          all_items_t<env_of_receiver, Senders...>>>;
+
+
+      using errors_variant = __minvoke<
+        __mconcat<__transform<__q<decay_t>, __q<__nullable_std_variant>>>,
+        __types<std::exception_ptr>,
+        error_types_items_t,
+        stdexec::error_types_of_t<Senders, env_with_stop_token<env_of_receiver>, __types>...>;
+
 
       using operation_base = zip_::operation_base<Receiver, result_tuple, errors_variant>;
 
       template <std::size_t Is>
       using receiver = zip_::receiver<Is, Receiver, result_tuple, errors_variant>;
+
+      template <class T>
+      struct indexes;
+
+      template <class Tp, Tp... Index>
+      struct indexes<std::integer_sequence<Tp, Index...>> {
+        using value = __types<__mconstant<Index>...>;
+      };
 
       template <class Sender, class Index>
       using op_state = exec::subscribe_result_t<Sender, receiver<__v<Index>>>;
@@ -529,8 +506,8 @@ namespace sio {
       using op_states_tuple = //
         __minvoke<
           __mzip_with2<__q<op_state>, Tuple>,
-          __types<Senders...>,
-          __mindex_sequence_for<Senders...>>;
+          __types<Senders...>, //
+          typename indexes< std::index_sequence_for< Senders... >>::value>;
     };
 
     template <class Receiver, class... Senders>
@@ -556,7 +533,7 @@ namespace sio {
         }}...) {
       }
 
-      void start(stdexec::start_t) noexcept {
+      void start() noexcept {
         this->stop_callback_.emplace(
           stdexec::get_stop_token(stdexec::get_env(this->receiver_)),
           on_stop_requested{this->stop_source_});
@@ -564,52 +541,61 @@ namespace sio {
       }
     };
 
-    template <class Indices, class... Senders>
-    struct sender;
+    template <class Receiver>
+    struct subscribe_fn {
+      Receiver& rcvr_;
 
-    template <std::size_t... Is, class... Senders>
-    struct sender<std::index_sequence<Is...>, Senders...> {
-      struct type;
-    };
-
-    template <std::size_t... Is, class... Senders>
-    struct sender<std::index_sequence<Is...>, Senders...>::type {
-      using is_sender = exec::sequence_tag;
-
-      std::tuple<Senders...> senders_;
-
-      template <decays_to<type> Self, class Receiver>
-      static auto subscribe(Self&& self, exec::subscribe_t, Receiver rcvr) //
-        noexcept(nothrow_constructible_from<
-                 operation<Receiver, copy_cvref_t<Self, Senders>...>,
-                 Receiver,
-                 copy_cvref_t<Self, std::tuple<Senders...>>,
-                 std::index_sequence<Is...>>)
-          -> operation<Receiver, copy_cvref_t<Self, Senders>...> {
+      template <class... Children>
+      auto operator()(stdexec::__ignore, stdexec::__ignore, Children&&... children) noexcept
+        -> operation<Receiver, Children&&...> {
         return {
-          static_cast<Receiver&&>(rcvr),
-          static_cast<Self&&>(self).senders_,
-          std::index_sequence<Is...>{}};
+          static_cast<Receiver&&>(rcvr_),
+          std::tuple<Children...>{static_cast<Children&&>(children)...},
+          std::index_sequence_for<Children...>()};
       }
-
-      template <decays_to<type> Self, class Env>
-      static auto
-        get_completion_signatures(Self&& self, stdexec::get_completion_signatures_t, Env&& env)
-          -> completions_t<Env, Senders...>;
-
-      template <decays_to<type> Self, class Env>
-      static auto get_item_types(Self&& self, exec::get_item_types_t, Env&& env)
-        -> exec::item_types<just_sender_t<result_tuple_t<Env, Senders...>>>;
     };
 
     struct zip_t {
       template <stdexec::sender... Senders>
-      auto operator()(Senders&&... senders) const noexcept((nothrow_decay_copyable<Senders> && ...))
-        -> typename sender<std::index_sequence_for<Senders...>, decay_t<Senders>...>::type {
-        return {{static_cast<Senders&&>(senders)...}};
+        requires stdexec::__domain::__has_common_domain<Senders...>
+      auto operator()(Senders&&... senders) const
+        noexcept((nothrow_decay_copyable<Senders> && ...)) -> stdexec::__well_formed_sender auto {
+        auto domain = stdexec::__domain::__common_domain_t<Senders...>();
+        return stdexec::transform_sender(
+          domain,
+          exec::make_sequence_expr<zip_t>(stdexec::__{}, static_cast<Senders&&>(senders)...));
       }
+
+      template <stdexec::sender_expr_for<zip_t> Self, class Receiver>
+      static auto subscribe(Self&& self, Receiver rcvr) noexcept(
+        stdexec::__nothrow_invocable<stdexec::__sexpr_apply_t, Self, subscribe_fn<Receiver>>)
+        -> stdexec::__call_result_t<stdexec::__sexpr_apply_t, Self, subscribe_fn<Receiver>> {
+        return stdexec::__sexpr_apply(static_cast<Self&&>(self), subscribe_fn< Receiver>{rcvr});
+      }
+
+      template <class Env, class... Senders>
+      using completions_t = //
+        __concat_completion_signatures<
+          completion_signatures<set_value_t(), set_stopped_t(), set_error_t(std::exception_ptr)>,
+          __try_make_completion_signatures<
+            Senders,
+            Env,
+            completion_signatures<>,
+            __mconst<completion_signatures<>>,
+            __mcompose<__q<completion_signatures>, __qf<set_error_t>, __q<decay_t>>>...>;
+
+
+      template <stdexec::sender_expr_for<zip_t> Self, class Env>
+      static auto get_completion_signatures(Self&& self, Env&& env) noexcept
+        -> stdexec::__children_of<Self, __mbind_front_q<completions_t, Env>>;
+
+
+      template <stdexec::sender_expr_for<zip_t> Self, class Env>
+      static auto get_item_types(Self&& self, Env&& env) noexcept
+        -> exec::item_types<
+          just_sender_t<stdexec::__children_of<Self, __mbind_front_q<result_tuple_t, Env>>>>;
     };
-  }
+  } // namespace zip_
 
   using zip_::zip_t;
   inline constexpr zip_t zip{};

@@ -2,6 +2,9 @@
 
 #include "./sequence_concepts.hpp"
 
+#include <exec/__detail/__basic_sequence.hpp>
+#include <stdexec/functional.hpp>
+
 namespace sio {
   namespace repeat_ {
     template <class Sender, class Receiver>
@@ -9,113 +12,111 @@ namespace sio {
 
     template <class Sender, class Receiver>
     struct receiver {
-      using is_receiver = void;
+      using receiver_concept = stdexec::receiver_t;
+
       operation<Sender, Receiver>* base_;
 
-      stdexec::env_of_t<const Receiver&> get_env(stdexec::get_env_t) const noexcept;
-
       template <class Item>
-      exec::next_sender_of_t<Receiver, Item> set_next(exec::set_next_t, Item&&);
+      friend auto tag_invoke(exec::set_next_t, receiver& self, Item&& item)
+        -> exec::next_sender_of_t<Receiver, Item> {
+        return exec::set_next(self.base_->rcvr_, static_cast<Item&&>(item));
+      }
 
-      void set_value(stdexec::set_value_t) && noexcept;
+      void set_value() && noexcept {
+        base_->repeat();
+      }
 
-      void set_stopped(stdexec::set_stopped_t) && noexcept;
+      void set_stopped() && noexcept {
+        exec::set_value_unless_stopped(static_cast<Receiver&&>(base_->rcvr_));
+      }
 
       template <class Error>
-      void set_error(stdexec::set_error_t, Error&& error) && noexcept;
+      void set_error(Error&& error) && noexcept {
+        stdexec::set_error(static_cast<Receiver&&>(base_->rcvr_), static_cast<Error&&>(error));
+      }
+
+      auto get_env() const noexcept -> stdexec::env_of_t<const Receiver&> {
+        return stdexec::get_env(base_->rcvr_);
+      }
     };
 
     template <class Sender, class Receiver>
     struct operation {
+      using receiver_t = repeat_::receiver<Sender, Receiver>;
+      using subscribe_result_t = exec::subscribe_result_t<const Sender&, receiver_t >;
+
       Sender sndr_;
       Receiver rcvr_;
-      std::optional<exec::subscribe_result_t<const Sender&, receiver<Sender, Receiver>>> op_{};
+      std::optional<subscribe_result_t> op_{};
 
       void repeat() noexcept {
-        stdexec::queryable auto env = stdexec::get_env(rcvr_);
+        stdexec::queryable auto env = stdexec::get_env(this->rcvr_);
         auto token = stdexec::get_stop_token(env);
         if (token.stop_requested()) {
-          stdexec::set_value(static_cast<Receiver&&>(rcvr_));
+          stdexec::set_value(static_cast<Receiver&&>(this->rcvr_));
           return;
         }
         try {
           auto& op = op_.emplace(stdexec::__conv{[&] {
-            return exec::subscribe((const Sender&) this->sndr_, receiver<Sender, Receiver>{this});
+            return exec::subscribe((const Sender&) this->sndr_, receiver_t{this});
           }});
           stdexec::start(op);
         } catch (...) {
-          stdexec::set_error(static_cast<Receiver&&>(rcvr_), std::current_exception());
+          stdexec::set_error(static_cast<Receiver&&>(this->rcvr_), std::current_exception());
         }
       }
 
-      void start(stdexec::start_t) noexcept {
+      void start() noexcept {
         repeat();
       }
     };
 
-    template <class Sender, class Receiver>
-    stdexec::env_of_t<const Receiver&>
-      receiver<Sender, Receiver>::get_env(stdexec::get_env_t) const noexcept {
-      return stdexec::get_env(base_->rcvr_);
-    }
+    template <class Receiver>
+    struct subscribe_fn {
+      Receiver& rcvr;
 
-    template <class Sender, class Receiver>
-    template <class Item>
-    exec::next_sender_of_t<Receiver, Item>
-      receiver<Sender, Receiver>::set_next(exec::set_next_t, Item&& item) {
-      return exec::set_next(base_->rcvr_, static_cast<Item&&>(item));
-    }
+      template <class Child>
+        requires exec::sequence_sender_to<Child, receiver<Child, Receiver>>
+      auto operator()(stdexec::__ignore, stdexec::__ignore, Child&& child) const noexcept
+        -> operation<Child, Receiver> {
+        return {static_cast<Child&&>(child), static_cast<Receiver&&>(rcvr)};
+      }
+    };
 
-    template <class Sender, class Receiver>
-    void receiver<Sender, Receiver>::set_value(stdexec::set_value_t) && noexcept {
-      base_->repeat();
-    }
+    struct repeat_t {
+      template <stdexec::sender Sender>
+      auto operator()(Sender&& sndr) const noexcept -> stdexec::__well_formed_sender auto {
+        auto domain = stdexec::__get_early_domain(static_cast<Sender&&>(sndr));
+        return stdexec::transform_sender(
+          domain, exec::make_sequence_expr<repeat_t>(stdexec::__{}, static_cast<Sender&&>(sndr)));
+      }
 
-    template <class Sender, class Receiver>
-    void receiver<Sender, Receiver>::set_stopped(stdexec::set_stopped_t) && noexcept {
-      exec::set_value_unless_stopped(static_cast<Receiver&&>(base_->rcvr_));
-    }
-
-    template <class Sender, class Receiver>
-    template <class Error>
-    void receiver<Sender, Receiver>::set_error(stdexec::set_error_t, Error&& error) && noexcept {
-      stdexec::set_error(static_cast<Receiver&&>(base_->rcvr_), static_cast<Error&&>(error));
-    }
-
-    template <class Sender>
-    struct sequence {
-      using is_sender = exec::sequence_tag;
-
-      template <class Self, class Env>
-      static auto
-        get_completion_signatures(Self&&, stdexec::get_completion_signatures_t, Env&&) noexcept
-        -> stdexec::__concat_completion_signatures_t<
-          stdexec::__with_exception_ptr,
-          stdexec::make_completion_signatures<
-            Sender,
+      template <stdexec::sender_expr_for<repeat_t> Self, class Env>
+      static auto get_completion_signatures(Self&&, Env&&) noexcept
+        -> stdexec::__concat_completion_signatures<
+          stdexec::__eptr_completion,
+          stdexec::transform_completion_signatures_of<
+            stdexec::__child_of<Self>,
             Env,
             stdexec::completion_signatures<stdexec::set_stopped_t()>,
             stdexec::__mconst<stdexec::completion_signatures<>>::__f>>;
 
-      template <class Self, class Env>
-      static auto get_item_types(Self&&, exec::get_item_types_t, Env&&) noexcept
-        -> exec::item_types_of_t<Sender, Env>;
 
-      template <decays_to<sequence> Self, class Rcvr>
-      static operation<Sender, Rcvr> subscribe(Self&& self, exec::subscribe_t, Rcvr rcvr) {
-        return {static_cast<Self&&>(self).sndr_, static_cast<Rcvr&&>(rcvr)};
+      template <stdexec::sender_expr_for<repeat_t> Self, class Env>
+      static auto get_item_types(Self&&, Env&&) noexcept
+        -> exec::item_types_of_t<stdexec::__child_of<Self>, Env>;
+
+      template <stdexec::sender_expr_for<repeat_t> Self, class Receiver>
+        requires exec::sequence_sender_to<
+                   stdexec::__child_of<Self>,
+                   receiver<stdexec::__child_of<Self>, Receiver >>
+      static auto subscribe(Self&& self, Receiver rcvr) noexcept(
+        stdexec::__nothrow_invocable<stdexec::__sexpr_apply_t, Self, subscribe_fn<Receiver>>)
+        -> stdexec::__call_result_t<stdexec::__sexpr_apply_t, Self, subscribe_fn<Receiver>> {
+        return stdexec::__sexpr_apply(static_cast<Self&&>(self), subscribe_fn<Receiver>{rcvr});
       }
-
-      Sender sndr_;
     };
   }
 
-  struct repeat_t {
-    template <class Sender>
-    repeat_::sequence<std::decay_t<Sender>> operator()(Sender&& sndr) const noexcept {
-      return {static_cast<Sender&&>(sndr)};
-    }
-  };
-
-  inline constexpr repeat_t repeat{};
+  inline constexpr repeat_::repeat_t repeat{};
 }

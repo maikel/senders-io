@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(senders-io 
+project(senders-io
   DESCRIPTION "An adaption of Senders/Receivers for async networking and I/O"
   HOMEPAGE_URL "https://github.com/maikel/senders-io"
   LANGUAGES CXX)
@@ -9,18 +9,19 @@ if (DOXYGEN_FOUND)
   set(DOXYGEN_GENERATE_HTML YES)
   set(DOXYGEN_GENERATE_MAN YES)
   doxygen_add_docs(
-      doxygen 
+      doxygen
       ${CMAKE_CURRENT_SOURCE_DIR}/source
   )
 endif()
-
+set(CMAKE_EXPORT_COMPILE_COMMANDS true)
 find_package(stdexec REQUIRED)
 
 add_library(sio
   source/sio/const_buffer_span.cpp
   source/sio/mutable_buffer_span.cpp
   source/sio/io_uring/file_handle.cpp
-  source/sio/memory_pool.cpp)
+  source/sio/memory_pool.cpp
+)
 add_library(sio::sio ALIAS sio)
 target_include_directories(sio
   PUBLIC
@@ -54,7 +55,8 @@ target_sources(sio PUBLIC
     source/sio/sequence/sequence_concepts.hpp
     source/sio/sequence/then_each.hpp
     source/sio/sequence/transform_each.hpp
-    source/sio/sequence/zip.hpp    
+    source/sio/sequence/finally.hpp
+    source/sio/sequence/zip.hpp
     source/sio/io_uring/file_handle.hpp
     source/sio/io_uring/socket_handle.hpp
     source/sio/assert.hpp
@@ -67,7 +69,6 @@ target_sources(sio PUBLIC
     source/sio/const_buffer_span.hpp
     source/sio/const_buffer.hpp
     source/sio/deferred.hpp
-    source/sio/finally.hpp
     source/sio/intrusive_list.hpp
     source/sio/intrusive_queue.hpp
     source/sio/io_concepts.hpp
@@ -75,7 +76,8 @@ target_sources(sio PUBLIC
     source/sio/net_concepts.hpp
     source/sio/read_batched.hpp
     source/sio/tap.hpp
-    source/sio/with_env.hpp)
+    source/sio/with_env.hpp
+  )
 target_link_libraries(sio PUBLIC STDEXEC::stdexec)
 target_compile_features(sio PUBLIC cxx_std_20)
 

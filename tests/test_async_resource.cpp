@@ -17,15 +17,17 @@
 #include "common/test_receiver.hpp"
 
 #include <catch2/catch.hpp>
+#include <exec/sequence_senders.hpp>
+#include <stdexec/__detail/__transform_completion_signatures.hpp>
 
 struct Token {
-  auto close(sio::async::close_t) const noexcept {
+  auto close() const noexcept {
     return stdexec::just();
   }
 };
 
 struct Resource {
-  auto open(sio::async::open_t) const noexcept {
+  auto open() const noexcept {
     return stdexec::just(Token{});
   }
 };
@@ -36,14 +38,14 @@ TEST_CASE("async_resource - sequence", "[async_resource]") {
   auto seq = sio::async::use(res);
   using sequence_t = decltype(seq);
   STATIC_REQUIRE(exec::sequence_sender_in<sequence_t, stdexec::empty_env>);
-  STATIC_REQUIRE(exec::sequence_sender_to<sequence_t, any_receiver>);
-  auto op = exec::subscribe(seq, any_receiver{});
+  STATIC_REQUIRE(exec::sequence_sender_to<sequence_t, any_sequence_receiver>);
+  auto op = exec::subscribe(std::move(seq), any_sequence_receiver{});
   stdexec::start(op);
 }
 
 TEST_CASE("async_resource - use_resources", "[async_resource]") {
   auto sndr = sio::async::use_resources([](Token) { return stdexec::just(42); }, Resource());
-  auto result = stdexec::sync_wait(sndr);
+  auto result = stdexec::sync_wait(std::move(sndr));
   CHECK(result);
   auto [value] = result.value();
   CHECK(value == 42);

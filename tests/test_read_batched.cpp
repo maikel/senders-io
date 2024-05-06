@@ -1,11 +1,22 @@
 #include <sio/read_batched.hpp>
+#include "common/test_helpers.hpp"
+#include "common/test_receiver.hpp"
 #include <sio/io_uring/file_handle.hpp>
+#include <sio/sequence/fork.hpp>
+#include <sio/sequence/iterate.hpp>
+#include <sio/sequence/ignore_all.hpp>
 
 #include <sio/buffer.hpp>
 
 #include <exec/when_any.hpp>
 
 #include <catch2/catch.hpp>
+#include <stdexec/__detail/__sync_wait.hpp>
+#include <stdexec/__detail/__transform_completion_signatures.hpp>
+
+using namespace sio;
+using namespace stdexec;
+using namespace sio::async;
 
 TEST_CASE("read_batched - Read from a file", "[read_batched]") {
   exec::safe_file_descriptor fd{::memfd_create("test", 0)};

@@ -1,24 +1,60 @@
 #pragma once
 
 #include "sio/concepts.hpp"
+#include <exec/sequence_senders.hpp>
 
-struct any_receiver {
+struct any_sequence_receiver {
+  using receiver_concept = stdexec::receiver_t;
+
   template <class Sender>
-  auto set_next(exec::set_next_t, Sender&&) noexcept {
+  friend auto tag_invoke(exec::set_next_t, any_sequence_receiver& self, Sender&& s) noexcept {
     return stdexec::just();
   }
 
-  void set_value(stdexec::set_value_t) && noexcept {
+  void set_value() && noexcept {
   }
 
-  void set_stopped(stdexec::set_stopped_t) && noexcept {
+  void set_stopped() && noexcept {
   }
 
   template <class E>
-  void set_error(stdexec::set_error_t, E&&) && noexcept {
+  void set_error(E&&) && noexcept {
   }
 
-  stdexec::empty_env get_env(stdexec::get_env_t) const noexcept {
+  auto get_env() const noexcept -> stdexec::empty_env {
+    return {};
+  }
+};
+
+struct any_receiver {
+  using receiver_concept = stdexec::receiver_t;
+
+  template <class... Arg>
+  void set_value(Arg&&...) noexcept {
+  }
+
+  void set_stopped() noexcept {
+  }
+
+  template <class E>
+  void set_error(E&&) noexcept {
+  }
+};
+
+struct int_receiver {
+  using receiver_concept = stdexec::receiver_t;
+
+  void set_value(int) noexcept {
+  }
+
+  void set_stopped() noexcept {
+  }
+
+  template <class E>
+  void set_error(E&&) noexcept {
+  }
+
+  auto get_env() const noexcept -> stdexec::empty_env {
     return {};
   }
 };

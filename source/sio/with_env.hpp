@@ -17,6 +17,8 @@
 
 #include "./concepts.hpp"
 #include <exec/env.hpp>
+#include <stdexec/__detail/__receivers.hpp>
+#include <stdexec/__detail/__senders_core.hpp>
 
 namespace sio {
   namespace with_env_ {
@@ -29,25 +31,25 @@ namespace sio {
 
     template <class Env, class Receiver>
     struct receiver {
-      using is_receiver = void;
+      using receiver_concept = stdexec::receiver_t;
 
       operation_base<Env, Receiver>* op_;
 
-      auto get_env(stdexec::get_env_t) const noexcept {
-        return stdexec::__join_env(op_->env, stdexec::get_env(op_->receiver));
+      auto get_env() const noexcept {
+        return stdexec::__env::__join(op_->env, stdexec::get_env(op_->receiver));
       }
 
       template <class... Args>
-      void set_value(stdexec::set_value_t, Args&&... args) && noexcept {
+      void set_value(Args&&... args) && noexcept {
         stdexec::set_value(static_cast<Receiver&&>(op_->receiver), static_cast<Args&&>(args)...);
       }
 
       template <class Error>
-      void set_error(stdexec::set_error_t, Error&& error) && noexcept {
+      void set_error(Error&& error) && noexcept {
         stdexec::set_error(static_cast<Receiver&&>(op_->receiver), static_cast<Error&&>(error));
       }
 
-      void set_stopped(stdexec::set_stopped_t) && noexcept {
+      void set_stopped() && noexcept {
         stdexec::set_stopped(static_cast<Receiver&&>(op_->receiver));
       }
     };
@@ -58,39 +60,40 @@ namespace sio {
 
       operation(Env env, Sender&& sender, Receiver rcvr)
         : operation_base<Env, Receiver>{static_cast<Env&&>(env), static_cast<Receiver&&>(rcvr)}
-        , op_{stdexec::connect(static_cast<Sender&&>(sender), receiver<Env, Receiver>{this})} {
+        , op_{stdexec::connect(
+            static_cast<Sender&&>(sender),
+            with_env_::receiver<Env, Receiver>{this})} {
       }
 
-      void start(stdexec::start_t) noexcept {
+      void start() noexcept {
         stdexec::start(op_);
       }
     };
 
     template <class Env, class Sender>
     struct sender {
-      using is_sender = void;
+      using sender_concept = stdexec::sender_t;
+      using completion_signatures = stdexec::completion_signatures_of_t<Sender, Env>;
 
       Env env_;
       Sender sender_;
 
-      using completion_signatures = stdexec::completion_signatures_of_t<Sender, Env>;
+      template <stdexec::receiver_of<completion_signatures> Receiver>
+        requires stdexec::sender_to<Sender, receiver<Env, Receiver>>
+      auto connect(Receiver rcvr) -> operation<Env, Sender, Receiver> {
+        return {env_, static_cast<Sender&&>(sender_), static_cast<Receiver&&>(rcvr)};
+      }
+    };
 
-      template <decays_to<sender> Self, stdexec::receiver_of<completion_signatures> Receiver>
-        requires stdexec::sender_to<copy_cvref_t<Self, Sender>, receiver<Env, Receiver>>
-      static auto connect(Self&& self, stdexec::connect_t, Receiver rcvr) {
-        return operation<Env, copy_cvref_t<Self, Sender>, Receiver>{
-          self.env_, static_cast<Self&&>(self).sender_, static_cast<Receiver&&>(rcvr)};
+    struct with_env_t {
+      template <class Env, class Sender>
+      auto operator()(Env env, Sender sender) const -> with_env_::sender<Env, Sender> {
+        return {static_cast<Env&&>(env), static_cast<Sender&&>(sender)};
       }
     };
   }
 
-  struct with_env_t {
-    template <class Env, class Sender>
-    with_env_::sender<Env, Sender> operator()(Env env, Sender sender) const {
-      return {static_cast<Env&&>(env), static_cast<Sender&&>(sender)};
-    }
-  };
-
+  using with_env_::with_env_t;
   inline constexpr with_env_t with_env{};
 
 }

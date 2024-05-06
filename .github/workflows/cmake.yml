@@ -20,8 +20,8 @@ jobs:
     steps:
     - uses: actions/checkout@v3
       with:
-        repository: villevoutilainen/wg21_p2300_std_execution
-        ref: member-only-customization-points
+        repository: NVIDIA/stdexec
+        ref: 9428f3570b7778a3b60659ea5dfec0d2447e7ca7
         path: stdexec
 
     - name: Configure stdexec

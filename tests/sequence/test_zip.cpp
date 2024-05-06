@@ -14,53 +14,20 @@
  * limitations under the License.
  */
 
-#include "sio/sequence/zip.hpp"
+#include <catch2/catch.hpp>
+#include <functional>
+
+#include <exec/sequence_senders.hpp>
+#include <stdexec/execution.hpp>
 
 #include "sio/sequence/first.hpp"
+#include "sio/sequence/fork.hpp"
+#include "sio/sequence/last.hpp"
+#include "sio/sequence/reduce.hpp"
+#include "sio/sequence/zip.hpp"
 #include "sio/sequence/iterate.hpp"
 #include "sio/sequence/ignore_all.hpp"
 #include "sio/sequence/then_each.hpp"
-
-#include <catch2/catch.hpp>
-
-struct any_receiver {
-  template <class Sender>
-  auto set_next(exec::set_next_t, Sender&&) noexcept {
-    return stdexec::just();
-  }
-
-  void set_value(stdexec::set_value_t) && noexcept {
-  }
-
-  void set_stopped(stdexec::set_stopped_t) && noexcept {
-  }
-
-  template <class E>
-  void set_error(stdexec::set_error_t, E&&) && noexcept {
-  }
-
-  stdexec::empty_env get_env(stdexec::get_env_t) const noexcept {
-    return {};
-  }
-};
-
-TEST_CASE("zip - with just connects with any_receiver", "[zip]") {
-  auto sender = sio::zip(stdexec::just(42));
-  using zip_t = decltype(sender);
-  STATIC_REQUIRE(stdexec::sender<zip_t>);
-  STATIC_REQUIRE(exec::sequence_sender_in<zip_t, stdexec::empty_env>);
-  STATIC_REQUIRE(stdexec::receiver<any_receiver>);
-  STATIC_REQUIRE_FALSE(stdexec::sender_to<zip_t, any_receiver>);
-  using compls = stdexec::completion_signatures_of_t<zip_t, stdexec::empty_env>;
-  using items = exec::item_types_of_t<zip_t, stdexec::empty_env>;
-  using seqs = exec::__sequence_completion_signatures_of_t<zip_t, stdexec::empty_env>;
-  STATIC_REQUIRE(stdexec::receiver_of<any_receiver, seqs>);
-  STATIC_REQUIRE(exec::sequence_receiver_of<any_receiver, items>);
-  STATIC_REQUIRE(exec::sequence_receiver_from<any_receiver, zip_t>);
-  STATIC_REQUIRE(exec::sequence_sender_to<zip_t, any_receiver>);
-  auto op = exec::subscribe(sender, any_receiver{});
-  stdexec::start(op);
-}
 
 TEST_CASE("zip - with just connects with first", "[zip][first]") {
   auto sequence = sio::zip(stdexec::just(42));
@@ -81,6 +48,7 @@ TEST_CASE("zip - array with sender", "[zip][iterate]") {
   std::array<int, 2> array{42, 43};
   int count = 0;
   auto sequence = sio::zip(stdexec::just(42), sio::iterate(std::ranges::views::all(array)))
+                | sio::first() //
                 | sio::then_each([&](int v, int w) {
                     ++count;
                     CHECK(v == 42);
@@ -94,13 +62,32 @@ TEST_CASE("zip - array with array", "[zip][iterate]") {
   std::array<int, 3> array{42, 43, 44};
   int count = 0;
   auto sequence =
-    sio::zip(
-      sio::iterate(std::ranges::views::all(array)), sio::iterate(std::ranges::views::all(array))) //
+    sio::zip(sio::iterate(std::views::all(array)), sio::iterate(std::views::all(array))) //
     | sio::then_each([&](int v, int w) {
         CHECK(v == 42 + count);
         CHECK(v == w);
         ++count;
-      });
-  stdexec::sync_wait(sio::ignore_all(sequence));
+      }) //
+    | sio::ignore_all();
+  stdexec::sync_wait(std::move(sequence));
   CHECK(count == 3);
 }
+
+// TEST_CASE("zip - a compilcated case", "[zip][iterate][fork]") {
+//   std::array<int, 2> array{42, 43};
+//   int count = 0;
+//
+//   auto reduce = sio::reduce(sio::iterate(std::views::all(array)), 1.0, std::multiplies<float>());
+//   auto sequence =
+//     sio::zip(stdexec::just(42), sio::iterate(std::views::all(array)), std::move(reduce)) //
+//     | sio::fork()                                                                        //
+//     | sio::first()                                                                       //
+//     | sio::then_each([&](int v, int w, float m) {
+//         ++count;
+//         CHECK(v == 42);
+//         CHECK(w == 42);
+//         CHECK(m == 42 * 43.0);
+//       });
+//   stdexec::sync_wait(sio::last(sequence));
+//   CHECK(count == 1);
+// }

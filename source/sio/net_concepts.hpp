@@ -24,7 +24,7 @@
 #include "./sequence/repeat.hpp"
 #include "./sequence/then_each.hpp"
 #include "./sequence/merge_each.hpp"
-#include "./finally.hpp"
+#include "./sequence/finally.hpp"
 
 namespace sio {
   template <class IP>
@@ -46,22 +46,22 @@ namespace sio::async {
   namespace socket_ {
     template <class Tp, class... Args>
     concept has_member_cpo = requires(Tp&& t, Args&&... args) {
-      static_cast<Tp&&>(t).socket(socket, static_cast<Args&&>(args)...);
+      static_cast<Tp&&>(t).socket(static_cast<Args&&>(args)...);
     };
 
     template <class Tp, class... Args>
     concept nothrow_has_member_cpo = requires(Tp&& t, Args&&... args) {
-      { static_cast<Tp&&>(t).socket(socket, static_cast<Args&&>(args)...) } noexcept;
+      { static_cast<Tp&&>(t).socket(static_cast<Args&&>(args)...) } noexcept;
     };
 
     template <class Tp, class... Args>
     concept has_static_member_cpo = requires(Tp&& t, Args&&... args) {
-      decay_t<Tp>::socket(static_cast<Tp&&>(t), socket, static_cast<Args&&>(args)...);
+      decay_t<Tp>::socket(static_cast<Tp&&>(t), static_cast<Args&&>(args)...);
     };
 
     template <class Tp, class... Args>
     concept nothrow_has_static_member_cpo = requires(Tp&& t, Args&&... args) {
-      { decay_t<Tp>::socket(static_cast<Tp&&>(t), socket, static_cast<Args&&>(args)...) } noexcept;
+      { decay_t<Tp>::socket(static_cast<Tp&&>(t), static_cast<Args&&>(args)...) } noexcept;
     };
 
     template <class Tp, class... Args>
@@ -77,10 +77,9 @@ namespace sio::async {
       auto operator()(Tp&& t, Args&&... args) const
         noexcept(nothrow_has_customization<Tp, Args...>) {
         if constexpr (has_member_cpo<Tp, Args...>) {
-          return static_cast<Tp&&>(t).socket(socket_t{}, static_cast<Args&&>(args)...);
+          return static_cast<Tp&&>(t).socket(static_cast<Args&&>(args)...);
         } else {
-          return decay_t<Tp>::socket(
-            static_cast<Tp&&>(t), socket_t{}, static_cast<Args&&>(args)...);
+          return decay_t<Tp>::socket(static_cast<Tp&&>(t), static_cast<Args&&>(args)...);
         }
       }
     };
@@ -98,24 +97,22 @@ namespace sio::async {
   namespace connect_ {
     template <class Tp, class... Args>
     concept has_member_cpo = requires(Tp&& t, Args&&... args) {
-      static_cast<Tp&&>(t).connect(connect, static_cast<Args&&>(args)...);
+      static_cast<Tp&&>(t).connect(static_cast<Args&&>(args)...);
     };
 
     template <class Tp, class... Args>
     concept nothrow_has_member_cpo = requires(Tp&& t, Args&&... args) {
-      { static_cast<Tp&&>(t).connect(connect, static_cast<Args&&>(args)...) } noexcept;
+      { static_cast<Tp&&>(t).connect(static_cast<Args&&>(args)...) } noexcept;
     };
 
     template <class Tp, class... Args>
     concept has_static_member_cpo = requires(Tp&& t, Args&&... args) {
-      decay_t<Tp>::connect(static_cast<Tp&&>(t), connect, static_cast<Args&&>(args)...);
+      decay_t<Tp>::connect(static_cast<Tp&&>(t), static_cast<Args&&>(args)...);
     };
 
     template <class Tp, class... Args>
     concept nothrow_has_static_member_cpo = requires(Tp&& t, Args&&... args) {
-      {
-        decay_t<Tp>::connect(static_cast<Tp&&>(t), connect, static_cast<Args&&>(args)...)
-      } noexcept;
+      { decay_t<Tp>::connect(static_cast<Tp&&>(t), static_cast<Args&&>(args)...) } noexcept;
     };
 
     template <class Tp, class... Args>
@@ -131,10 +128,9 @@ namespace sio::async {
       auto operator()(Tp&& t, Args&&... args) const
         noexcept(nothrow_has_customization<Tp, Args...>) {
         if constexpr (has_member_cpo<Tp, Args...>) {
-          return static_cast<Tp&&>(t).connect(connect_t{}, static_cast<Args&&>(args)...);
+          return static_cast<Tp&&>(t).connect(static_cast<Args&&>(args)...);
         } else {
-          return decay_t<Tp>::connect(
-            static_cast<Tp&&>(t), connect_t{}, static_cast<Args&&>(args)...);
+          return decay_t<Tp>::connect(static_cast<Tp&&>(t), static_cast<Args&&>(args)...);
         }
       }
     };
@@ -152,24 +148,22 @@ namespace sio::async {
   namespace accept_once_ {
     template <class Tp, class... Args>
     concept has_member_cpo = requires(Tp&& t, Args&&... args) {
-      static_cast<Tp&&>(t).accept_once(accept_once, static_cast<Args&&>(args)...);
+      static_cast<Tp&&>(t).accept_once(static_cast<Args&&>(args)...);
     };
 
     template <class Tp, class... Args>
     concept nothrow_has_member_cpo = requires(Tp&& t, Args&&... args) {
-      { static_cast<Tp&&>(t).accept_once(accept_once, static_cast<Args&&>(args)...) } noexcept;
+      { static_cast<Tp&&>(t).accept_once(static_cast<Args&&>(args)...) } noexcept;
     };
 
     template <class Tp, class... Args>
     concept has_static_member_cpo = requires(Tp&& t, Args&&... args) {
-      decay_t<Tp>::accept_once(static_cast<Tp&&>(t), accept_once, static_cast<Args&&>(args)...);
+      decay_t<Tp>::accept_once(static_cast<Tp&&>(t), static_cast<Args&&>(args)...);
     };
 
     template <class Tp, class... Args>
     concept nothrow_has_static_member_cpo = requires(Tp&& t, Args&&... args) {
-      {
-        decay_t<Tp>::accept_once(static_cast<Tp&&>(t), accept_once, static_cast<Args&&>(args)...)
-      } noexcept;
+      { decay_t<Tp>::accept_once(static_cast<Tp&&>(t), static_cast<Args&&>(args)...) } noexcept;
     };
 
     template <class Tp, class... Args>
@@ -185,10 +179,9 @@ namespace sio::async {
       auto operator()(Tp&& t, Args&&... args) const
         noexcept(nothrow_has_customization<Tp, Args...>) {
         if constexpr (has_member_cpo<Tp, Args...>) {
-          return static_cast<Tp&&>(t).accept_once(accept_once_t{}, static_cast<Args&&>(args)...);
+          return static_cast<Tp&&>(t).accept_once(static_cast<Args&&>(args)...);
         } else {
-          return decay_t<Tp>::accept_once(
-            static_cast<Tp&&>(t), accept_once_t{}, static_cast<Args&&>(args)...);
+          return decay_t<Tp>::accept_once(static_cast<Tp&&>(t), static_cast<Args&&>(args)...);
         }
       }
     };
@@ -206,22 +199,22 @@ namespace sio::async {
   namespace accept_ {
     template <class Tp, class... Args>
     concept has_member_cpo = requires(Tp&& t, Args&&... args) {
-      static_cast<Tp&&>(t).accept(accept, static_cast<Args&&>(args)...);
+      static_cast<Tp&&>(t).accept(static_cast<Args&&>(args)...);
     };
 
     template <class Tp, class... Args>
     concept nothrow_has_member_cpo = requires(Tp&& t, Args&&... args) {
-      { static_cast<Tp&&>(t).accept(accept, static_cast<Args&&>(args)...) } noexcept;
+      { static_cast<Tp&&>(t).accept(static_cast<Args&&>(args)...) } noexcept;
     };
 
     template <class Tp, class... Args>
     concept has_static_member_cpo = requires(Tp&& t, Args&&... args) {
-      decay_t<Tp>::accept(static_cast<Tp&&>(t), accept, static_cast<Args&&>(args)...);
+      decay_t<Tp>::accept(static_cast<Tp&&>(t), static_cast<Args&&>(args)...);
     };
 
     template <class Tp, class... Args>
     concept nothrow_has_static_member_cpo = requires(Tp&& t, Args&&... args) {
-      { decay_t<Tp>::accept(static_cast<Tp&&>(t), accept, static_cast<Args&&>(args)...) } noexcept;
+      { decay_t<Tp>::accept(static_cast<Tp&&>(t), static_cast<Args&&>(args)...) } noexcept;
     };
 
     template <class Tp, class... Args>
@@ -237,18 +230,12 @@ namespace sio::async {
       auto operator()(Tp&& t, Args&&... args) const
         noexcept(nothrow_has_customization<Tp, Args...>) {
         if constexpr (has_member_cpo<Tp, Args...>) {
-          return static_cast<Tp&&>(t).accept(accept_t{}, static_cast<Args&&>(args)...);
+          return static_cast<Tp&&>(t).accept(static_cast<Args&&>(args)...);
         } else if constexpr (has_static_member_cpo<Tp, Args...>) {
-          return decay_t<Tp>::accept(
-            static_cast<Tp&&>(t), accept_t{}, static_cast<Args&&>(args)...);
+          return decay_t<Tp>::accept(static_cast<Tp&&>(t), static_cast<Args&&>(args)...);
         } else {
-          return                                                                    //
-            repeat(accept_once(static_cast<Tp&&>(t), static_cast<Args&&>(args)...)) //
-            | fork()                                                                //
-            | then_each([](auto client) {
-                return finally(stdexec::just(client), close(client));
-              }) //
-            | merge_each();
+          return repeat(accept_once(static_cast<Tp&&>(t), static_cast<Args&&>(args)...)) //
+               | fork();                                                                 //
         }
       }
     };
@@ -266,24 +253,22 @@ namespace sio::async {
   namespace sendmsg_ {
     template <class Tp, class... Args>
     concept has_member_cpo = requires(Tp&& t, Args&&... args) {
-      static_cast<Tp&&>(t).sendmsg(sendmsg, static_cast<Args&&>(args)...);
+      static_cast<Tp&&>(t).sendmsg(static_cast<Args&&>(args)...);
     };
 
     template <class Tp, class... Args>
     concept nothrow_has_member_cpo = requires(Tp&& t, Args&&... args) {
-      { static_cast<Tp&&>(t).sendmsg(sendmsg, static_cast<Args&&>(args)...) } noexcept;
+      { static_cast<Tp&&>(t).sendmsg(static_cast<Args&&>(args)...) } noexcept;
     };
 
     template <class Tp, class... Args>
     concept has_static_member_cpo = requires(Tp&& t, Args&&... args) {
-      decay_t<Tp>::sendmsg(static_cast<Tp&&>(t), sendmsg, static_cast<Args&&>(args)...);
+      decay_t<Tp>::sendmsg(static_cast<Tp&&>(t), static_cast<Args&&>(args)...);
     };
 
     template <class Tp, class... Args>
     concept nothrow_has_static_member_cpo = requires(Tp&& t, Args&&... args) {
-      {
-        decay_t<Tp>::sendmsg(static_cast<Tp&&>(t), sendmsg, static_cast<Args&&>(args)...)
-      } noexcept;
+      { decay_t<Tp>::sendmsg(static_cast<Tp&&>(t), static_cast<Args&&>(args)...) } noexcept;
     };
 
     template <class Tp, class... Args>
@@ -299,10 +284,9 @@ namespace sio::async {
       auto operator()(Tp&& t, Args&&... args) const
         noexcept(nothrow_has_customization<Tp, Args...>) {
         if constexpr (has_member_cpo<Tp, Args...>) {
-          return static_cast<Tp&&>(t).sendmsg(sendmsg_t{}, static_cast<Args&&>(args)...);
+          return static_cast<Tp&&>(t).sendmsg(static_cast<Args&&>(args)...);
         } else {
-          return decay_t<Tp>::sendmsg(
-            static_cast<Tp&&>(t), sendmsg_t{}, static_cast<Args&&>(args)...);
+          return decay_t<Tp>::sendmsg(static_cast<Tp&&>(t), static_cast<Args&&>(args)...);
         }
       }
     };
@@ -320,24 +304,22 @@ namespace sio::async {
   namespace recvmsg_ {
     template <class Tp, class... Args>
     concept has_member_cpo = requires(Tp&& t, Args&&... args) {
-      static_cast<Tp&&>(t).recvmsg(recvmsg, static_cast<Args&&>(args)...);
+      static_cast<Tp&&>(t).recvmsg(static_cast<Args&&>(args)...);
     };
 
     template <class Tp, class... Args>
     concept nothrow_has_member_cpo = requires(Tp&& t, Args&&... args) {
-      { static_cast<Tp&&>(t).recvmsg(recvmsg, static_cast<Args&&>(args)...) } noexcept;
+      { static_cast<Tp&&>(t).recvmsg(static_cast<Args&&>(args)...) } noexcept;
     };
 
     template <class Tp, class... Args>
     concept has_static_member_cpo = requires(Tp&& t, Args&&... args) {
-      decay_t<Tp>::recvmsg(static_cast<Tp&&>(t), recvmsg, static_cast<Args&&>(args)...);
+      decay_t<Tp>::recvmsg(static_cast<Tp&&>(t), static_cast<Args&&>(args)...);
     };
 
     template <class Tp, class... Args>
     concept nothrow_has_static_member_cpo = requires(Tp&& t, Args&&... args) {
-      {
-        decay_t<Tp>::recvmsg(static_cast<Tp&&>(t), recvmsg, static_cast<Args&&>(args)...)
-      } noexcept;
+      { decay_t<Tp>::recvmsg(static_cast<Tp&&>(t), static_cast<Args&&>(args)...) } noexcept;
     };
 
     template <class Tp, class... Args>
@@ -353,10 +335,9 @@ namespace sio::async {
       auto operator()(Tp&& t, Args&&... args) const
         noexcept(nothrow_has_customization<Tp, Args...>) {
         if constexpr (has_member_cpo<Tp, Args...>) {
-          return static_cast<Tp&&>(t).recvmsg(recvmsg_t{}, static_cast<Args&&>(args)...);
+          return static_cast<Tp&&>(t).recvmsg(static_cast<Args&&>(args)...);
         } else {
-          return decay_t<Tp>::recvmsg(
-            static_cast<Tp&&>(t), recvmsg_t{}, static_cast<Args&&>(args)...);
+          return decay_t<Tp>::recvmsg(static_cast<Tp&&>(t), static_cast<Args&&>(args)...);
         }
       }
     };

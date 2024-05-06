@@ -15,6 +15,7 @@
  */
 #pragma once
 
+#include "../concepts.hpp"
 #include "./transform_each.hpp"
 
 namespace sio {
@@ -36,7 +37,7 @@ namespace sio {
 
     template <class _Fn>
     auto operator()(_Fn&& __fn) const -> binder_back<then_each_t, _Fn> {
-      return {{}, {}, {static_cast<_Fn&&>(__fn)}};
+      return {{static_cast<_Fn&&>(__fn)}, {}, {}};
     }
   };
 
