@@ -19,6 +19,16 @@
 #define _GNU_SOURCE
 #endif
 
+#include <netdb.h>
+
+#include <csignal>
+#include <cstring>
+#include <string>
+#include <string_view>
+
+#include <exec/sequence_senders.hpp>
+#include <exec/inline_scheduler.hpp>
+
 #include "../concepts.hpp"
 #include "./address.hpp"
 #include "./endpoint.hpp"
@@ -26,17 +36,6 @@
 #include "../assert.hpp"
 #include "../net_concepts.hpp"
 #include "../sequence/sequence_concepts.hpp"
-
-#include <exec/sequence_senders.hpp>
-#include <exec/inline_scheduler.hpp>
-
-
-#include <cstring>
-#include <string>
-#include <string_view>
-
-#include <netdb.h>
-#include <signal.h>
 
 namespace sio::ip {
   enum class gaierrc {
@@ -77,7 +76,7 @@ namespace sio::ip {
     }
   };
 
-  const resolver_error_category_t& resolver_error_category() noexcept {
+  static const resolver_error_category_t& resolver_error_category() noexcept {
     static const resolver_error_category_t impl{};
     return impl;
   }
@@ -232,9 +231,10 @@ namespace sio::async {
 
     template <class Scheduler, class Receiver>
     struct next_receiver {
+      using receiver_concept = stdexec::receiver_t;
       operation<Scheduler, Receiver>* op_{};
 
-      void set_value(stdexec::set_value_t) && noexcept {
+      void set_value() noexcept {
         SIO_ASSERT(op_->result_iter_ != nullptr);
         op_->result_iter_ = op_->result_iter_->ai_next;
         if (op_->result_iter_) {
@@ -245,13 +245,13 @@ namespace sio::async {
         }
       }
 
-      void set_stopped(stdexec::set_stopped_t) && noexcept {
+      void set_stopped() noexcept {
         SIO_ASSERT(op_->request_.ar_result);
         ::freeaddrinfo(op_->request_.ar_result);
         exec::set_value_unless_stopped(static_cast<Receiver&&>(op_->receiver_));
       }
 
-      stdexec::env_of_t<Receiver> get_env(stdexec::get_env_t) const noexcept {
+      stdexec::env_of_t<Receiver> get_env() const noexcept {
         return stdexec::get_env(op_->receiver_);
       }
     };
@@ -291,7 +291,7 @@ namespace sio::async {
           auto res = //
             stdexec::just(
               ip::resolver_result{result_iter_, query_.host_name(), query_.service_name()});
-          return stdexec::connect(exec::set_next(receiver_, res), next_rcvr_t{this});
+          return stdexec::connect(exec::set_next(receiver_, std::move(res)), next_rcvr_t{this});
         }});
         stdexec::start(next_op);
       } catch (...) {
@@ -318,14 +318,14 @@ namespace sio::async {
         }
       }
 
-      void start(stdexec::start_t) noexcept {
+      void start() noexcept {
         ::getaddrinfo_a(GAI_NOWAIT, requests_, 1, &sigev);
       }
     };
 
     template <class Scheduler>
     struct sender {
-      using is_sender = exec::sequence_tag;
+      using sender_concept = exec::sequence_sender_t;
 
       using completion_signatures = stdexec::completion_signatures<
         stdexec::set_value_t(),
@@ -340,8 +340,8 @@ namespace sio::async {
       ip::resolver_query query_;
 
       template <decays_to<sender> Self, class Receiver>
-      static operation<Scheduler, Receiver>
-        subscribe(Self&& self, exec::subscribe_t, Receiver&& receiver) {
+      friend operation<Scheduler, Receiver>
+        tag_invoke(exec::subscribe_t, Self&& self, Receiver receiver) {
         return operation<Scheduler, Receiver>{
           static_cast<Scheduler&&>(self.scheduler_),
           static_cast<ip::resolver_query&&>(self.query_),

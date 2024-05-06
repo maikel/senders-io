@@ -1,4 +1,5 @@
-/* Copyright (c) 2023 Maikel Nadolski
+/*
+ * Copyright (c) 2023 Maikel Nadolski
  *
  * Licensed under the Apache License Version 2.0 with LLVM Exceptions
  * (the "License"); you may not use this file except in compliance with
@@ -14,7 +15,6 @@
  */
 #pragma once
 
-#include "../concepts.hpp"
 #include "exec/sequence/any_sequence_of.hpp"
 
 namespace sio {

@@ -15,11 +15,6 @@
  */
 #pragma once
 
-#include "./assert.hpp"
-#include "./async_allocator.hpp"
-#include "./concepts.hpp"
-#include "./intrusive_list.hpp"
-
 #include <array>
 #include <atomic>
 #include <cstring>
@@ -27,6 +22,14 @@
 #include <span>
 #include <system_error>
 #include <variant>
+
+#include <stdexec/__detail/__concepts.hpp>
+#include <stdexec/__detail/__senders_core.hpp>
+
+#include "./assert.hpp"
+#include "./async_allocator.hpp"
+#include "./concepts.hpp"
+#include "./intrusive_list.hpp"
 
 namespace sio {
   class memory_resource {
@@ -126,13 +129,14 @@ namespace sio {
       , receiver_(static_cast<Receiver&&>(receiver)) {
     }
 
-    void start(stdexec::start_t) noexcept;
+    void start() noexcept;
 
     using stop_token_t = stdexec::stop_token_of_t<stdexec::env_of_t<Receiver>>;
     std::optional<typename stop_token_t::template callback_type<on_receiver_stop>> stop_callback_{};
   };
 
   struct allocate_sender {
+    using sender_concept = stdexec::sender_t;
     memory_pool* pool_{};
     std::size_t index_{};
 
@@ -142,8 +146,8 @@ namespace sio {
       stdexec::set_stopped_t()>;
 
     template <stdexec::receiver_of<completion_signatures> Receiver>
-    allocate_operation<Receiver> connect(stdexec::connect_t, Receiver receiver) const
-      noexcept(nothrow_move_constructible<Receiver>) {
+    auto connect(Receiver receiver) noexcept(
+      nothrow_move_constructible<Receiver>) -> allocate_operation<Receiver> {
       return {static_cast<Receiver&&>(receiver), pool_, index_};
     }
   };
@@ -166,10 +170,11 @@ namespace sio {
       , destroy_(destroy) {
     }
 
-    void start(stdexec::start_t) noexcept;
+    void start() noexcept;
   };
 
   struct deallocate_sender {
+    using sender_concept = stdexec::sender_t;
     memory_pool* pool_{};
     void* pointer_{};
     void (*destroy_)(void*) = nullptr;
@@ -177,20 +182,20 @@ namespace sio {
     using completion_signatures = stdexec::completion_signatures<stdexec::set_value_t()>;
 
     template <stdexec::receiver_of<completion_signatures> Receiver>
-    deallocate_operation<Receiver> connect(stdexec::connect_t, Receiver receiver) const
-      noexcept(nothrow_move_constructible<Receiver>) {
+    auto connect(Receiver receiver) noexcept(
+      nothrow_move_constructible<Receiver>) -> deallocate_operation<Receiver> {
       return {static_cast<Receiver&&>(receiver), pool_, pointer_, destroy_};
     }
 
     friend void tag_invoke(stdexec::sync_wait_t, deallocate_sender self) noexcept {
       struct rcvr {
-        using is_receiver = void;
+        using receiver_concept = stdexec::receiver_t;
 
-        stdexec::empty_env get_env(stdexec::get_env_t) const noexcept {
+        auto get_env() const noexcept -> stdexec::empty_env {
           return {};
         }
 
-        void set_value(stdexec::set_value_t) const noexcept {
+        void set_value() const noexcept {
         }
       };
 
@@ -227,7 +232,7 @@ namespace sio {
   };
 
   template <class Receiver>
-  void allocate_operation<Receiver>::start(stdexec::start_t) noexcept {
+  void allocate_operation<Receiver>::start() noexcept {
     SIO_ASSERT(index_ >= 0 && index_ < 32);
     std::unique_lock lock(pool_->mutex_);
     void* block_ptr = pool_->block_lists_[index_];
@@ -255,7 +260,7 @@ namespace sio {
   }
 
   template <class Receiver>
-  void deallocate_operation<Receiver>::start(stdexec::start_t) noexcept {
+  void deallocate_operation<Receiver>::start() noexcept {
     if (destroy_) {
       destroy_(pointer_);
     }
@@ -283,7 +288,7 @@ namespace sio {
     }
 
     template <class... Args>
-    auto async_new(async::async_new_t, Args&&... args) const {
+    auto async_new(Args&&... args) const {
       return stdexec::let_value(
         pool_->allocate(sizeof(T), alignof(T)),
         [... args = static_cast<Args&&>(args), this](void* ptr) mutable {
@@ -301,13 +306,13 @@ namespace sio {
         });
     }
 
-    auto async_new_array(async::async_new_array_t, std::size_t size) const {
+    auto async_new_array(std::size_t size) const {
       return stdexec::then(
         pool_->allocate(sizeof(T) * size, alignof(T)),
         [size](void* ptr) noexcept { return new (ptr) T[size]; });
     }
 
-    deallocate_sender async_delete(async::async_delete_t, T* ptr) const noexcept;
+    deallocate_sender async_delete(T* ptr) const noexcept;
   };
 
   template <class Receiver>
@@ -321,8 +326,7 @@ namespace sio {
   }
 
   template <class T>
-  deallocate_sender
-    memory_pool_allocator<T>::async_delete(async::async_delete_t, T* ptr) const noexcept {
+  deallocate_sender memory_pool_allocator<T>::async_delete(T* ptr) const noexcept {
     return pool_->deallocate(ptr, [](void* vptr) { static_cast<T*>(vptr)->~T(); });
   }
 

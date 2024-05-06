@@ -13,19 +13,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include "sio/sequence/scan.hpp"
 
-#include "sio/sequence/empty_sequence.hpp"
+#include <catch2/catch.hpp>
+#include <exec/sequence_senders.hpp>
+#include <stdexec/execution.hpp>
+
+#include "sio/sequence/fork.hpp"
+#include "sio/sequence/ignore_all.hpp"
+#include "sio/sequence/scan.hpp"
 #include "sio/sequence/iterate.hpp"
 #include "sio/sequence/first.hpp"
 #include "sio/sequence/last.hpp"
 
-#include <catch2/catch.hpp>
-
-TEST_CASE("scan - with just sender", "[sequence][scan][first]") {
-  auto first = sio::first(sio::scan(stdexec::just(42), 0));
-  auto [x] = stdexec::sync_wait(first).value();
-  REQUIRE(x == 42);
+TEST_CASE("scan - with just sender and ignore_all back binder", "[sequence][scan][ignore_all]") {
+  auto f = sio::scan(stdexec::just(41), 1) | sio::ignore_all();
+  stdexec::sync_wait(f);
 }
 
 TEST_CASE("scan - with just sender and back binder", "[sequence][scan][last]") {
@@ -34,19 +36,30 @@ TEST_CASE("scan - with just sender and back binder", "[sequence][scan][last]") {
   REQUIRE(x == 42);
 }
 
+TEST_CASE("scan - with just sender and first back binder", "[sequence][scan][first]") {
+  auto f = sio::scan(stdexec::just(41), 1) | sio::first();
+  auto [x] = stdexec::sync_wait(f).value();
+  REQUIRE(x == 42);
+}
+
+TEST_CASE("scan - with just sender and fork", "[sequence][scan][first][fork]") {
+  auto f = sio::scan(stdexec::just(41), 1) | sio::fork() | sio::first();
+  auto [x] = stdexec::sync_wait(f).value();
+  REQUIRE(x == 42);
+}
+
 TEST_CASE("scan - with iterate", "[sequence][scan][last][iterate]") {
   std::array<int, 3> arr{1, 2, 3};
-  auto iterate = sio::iterate(std::ranges::views::all(arr));
-  STATIC_REQUIRE(exec::sequence_sender<decltype(iterate), stdexec::no_env>);
-  auto scan = sio::scan(sio::iterate(std::ranges::views::all(arr)), 0);
-  using Scan = decltype(scan);
-  // stdexec::__types<Scan> {};
-  // using sigs = decltype(stdexec::get_completion_signatures(scan, stdexec::empty_env{}));
-  STATIC_REQUIRE(stdexec::sender_in<Scan, stdexec::empty_env>);
-  STATIC_REQUIRE(exec::sequence_sender<Scan, stdexec::no_env>);
-  // using sigs = stdexec::completion_signatures_of_t<decltype(scan), stdexec::empty_env>;
-  // stdexec::__types<sigs> {};
-  // STATIC_REQUIRE(stdexec::sender<Scan>);
-  auto [x] = stdexec::sync_wait(sio::last(scan)).value();
+  auto sndr = sio::scan(sio::iterate(std::ranges::views::all(arr)), 0) //
+            | sio::last();
+  auto [x] = stdexec::sync_wait(sndr).value();
+  REQUIRE(x == 6);
+}
+
+TEST_CASE("scan - with multiply function", "[sequence][scan][last][iterate]") {
+  std::array<int, 3> arr{1, 2, 3};
+  auto sndr = sio::scan(sio::iterate(std::ranges::views::all(arr)), 1, std::multiplies<int>()) //
+            | sio::last();
+  auto [x] = stdexec::sync_wait(sndr).value();
   REQUIRE(x == 6);
 }

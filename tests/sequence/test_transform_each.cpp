@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include "sio/sequence/let_value_each.hpp"
 #include "sio/sequence/transform_each.hpp"
 
 #include "sio/sequence/then_each.hpp"
@@ -50,6 +51,15 @@ TEST_CASE("then_each - with iterate and binder back", "[sequence][transform_each
   std::array<int, 2> array{41, 41};
   auto successor = sio::iterate(array) |                         //
                    sio::then_each([](int x) { return x + 1; }) | //
+                   sio::first();
+  auto [x] = stdexec::sync_wait(successor).value();
+  REQUIRE(x == 42);
+}
+
+TEST_CASE("let_value_each - with iterate and binder back", "[sequence][transform_each][iterate]") {
+  std::array<int, 2> array{41, 41};
+  auto successor = sio::iterate(array) |                                             //
+                   sio::let_value_each([](int x) { return stdexec::just(x + 1); }) | //
                    sio::first();
   auto [x] = stdexec::sync_wait(successor).value();
   REQUIRE(x == 42);

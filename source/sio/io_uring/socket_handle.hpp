@@ -16,7 +16,6 @@
 #pragma once
 
 #include "./file_handle.hpp"
-
 #include "../net_concepts.hpp"
 
 namespace sio::io_uring {
@@ -58,7 +57,7 @@ namespace sio::io_uring {
 
     template <class Protocol>
     struct sender {
-      using is_sender = void;
+      using sender_concept = stdexec::sender_t;
 
       exec::io_uring_context* context_;
       Protocol protocol_;
@@ -68,13 +67,12 @@ namespace sio::io_uring {
         stdexec::set_error_t(std::error_code)>;
 
       template <class Receiver>
-      auto connect(stdexec::connect_t, Receiver rcvr) const
-        noexcept(nothrow_move_constructible<Receiver>) {
-        return operation<Protocol, Receiver>{
-          std::in_place, *context_, protocol_, static_cast<Receiver&&>(rcvr)};
+      auto connect(Receiver rcvr) noexcept(
+        nothrow_move_constructible<Receiver>) -> operation<Protocol, Receiver> {
+        return {std::in_place, *context_, protocol_, static_cast<Receiver&&>(rcvr)};
       }
 
-      env get_env(stdexec::get_env_t) const noexcept {
+      env get_env() const noexcept {
         return {context_->get_scheduler()};
       }
     };
@@ -126,7 +124,7 @@ namespace sio::io_uring {
 
     template <class Protocol>
     struct sender {
-      using is_sender = void;
+      using sender_concept = stdexec::sender_t;
 
       exec::io_uring_context* context_;
       typename Protocol::endpoint peer_endpoint_;
@@ -138,13 +136,12 @@ namespace sio::io_uring {
         stdexec::set_stopped_t()>;
 
       template <stdexec::receiver_of<completion_signatures> Receiver>
-      operation<Protocol, Receiver> connect(stdexec::connect_t, Receiver rcvr) const
-        noexcept(nothrow_move_constructible<Receiver>) {
-        return operation<Protocol, Receiver>{
-          std::in_place, fd_, peer_endpoint_, *context_, static_cast<Receiver&&>(rcvr)};
+      auto connect(Receiver rcvr) noexcept(
+        nothrow_move_constructible<Receiver>) -> operation<Protocol, Receiver> {
+        return {std::in_place, fd_, peer_endpoint_, *context_, static_cast<Receiver&&>(rcvr)};
       }
 
-      env get_env(stdexec::get_env_t) const noexcept {
+      env get_env() const noexcept {
         return {context_->get_scheduler()};
       }
     };
@@ -188,17 +185,16 @@ namespace sio::io_uring {
   using sendmsg_operation = stoppable_task_facade<sendmsg_operation_base<Receiver>>;
 
   struct sendmsg_sender {
-    using is_sender = void;
+    using sender_concept = stdexec::sender_t;
     using completion_signatures = stdexec::completion_signatures<
       stdexec::set_value_t(std::size_t),
       stdexec::set_error_t(std::error_code),
       stdexec::set_stopped_t()>;
 
     template <class Receiver>
-    sendmsg_operation<Receiver> connect(stdexec::connect_t, Receiver rcvr) const
-      noexcept(nothrow_move_constructible<Receiver>) {
-      return sendmsg_operation<Receiver>{
-        std::in_place, static_cast<Receiver&&>(rcvr), context_, fd_, msg_};
+    auto connect(Receiver rcvr) noexcept(
+      nothrow_move_constructible<Receiver>) -> sendmsg_operation<Receiver> {
+      return {std::in_place, static_cast<Receiver&&>(rcvr), context_, fd_, msg_};
     }
 
     exec::io_uring_context* context_;
@@ -219,11 +215,11 @@ namespace sio::io_uring {
 
     [[no_unique_address]] Protocol protocol_;
 
-    connect_::sender<Protocol> connect(async::connect_t, endpoint peer_endpoint) const noexcept {
-      return {this->context_, peer_endpoint, fd_};
+    connect_::sender<Protocol> connect(endpoint peer_endpoint) const noexcept {
+      return {context_, peer_endpoint, fd_};
     }
 
-    sendmsg_sender sendmsg(async::sendmsg_t, ::msghdr msg) const noexcept {
+    sendmsg_sender sendmsg(::msghdr msg) const noexcept {
       return {this->context_, fd_, msg};
     }
 
@@ -252,7 +248,7 @@ namespace sio::io_uring {
       , protocol_{protocol} {
     }
 
-    socket_::sender<Protocol> open(async::open_t) noexcept {
+    socket_::sender<Protocol> open() noexcept {
       return {&context_, protocol_};
     }
   };
@@ -329,7 +325,7 @@ namespace sio::io_uring {
 
   template <class Protocol>
   struct accept_sender {
-    using is_sender = void;
+    using sender_concept = stdexec::sender_t;
 
     using completion_signatures = stdexec::completion_signatures<
       stdexec::set_value_t(socket_handle<Protocol>),
@@ -342,9 +338,9 @@ namespace sio::io_uring {
     typename Protocol::endpoint local_endpoint_;
 
     template <stdexec::receiver_of<completion_signatures> Receiver>
-    accept_operation<Protocol, Receiver>
-      connect(stdexec::connect_t, Receiver rcvr) noexcept(nothrow_decay_copyable<Receiver>) {
-      return accept_operation<Protocol, Receiver>{
+    auto connect(Receiver rcvr) noexcept(
+      nothrow_decay_copyable<Receiver>) -> accept_operation<Protocol, Receiver> {
+      return {
         std::in_place,
         *context_,
         static_cast<Receiver&&>(rcvr),
@@ -369,7 +365,7 @@ namespace sio::io_uring {
       , local_endpoint_(local_endpoint) {
     }
 
-    accept_sender<Protocol> accept_once(async::accept_once_t) const noexcept {
+    accept_sender<Protocol> accept_once() const noexcept {
       return accept_sender<Protocol>{context_, fd_, protocol_, local_endpoint_};
     }
   };
@@ -405,10 +401,9 @@ namespace sio::io_uring {
       }
     }
 
-    auto open(async::open_t) noexcept {
+    auto open() noexcept {
       return stdexec::then(
-        socket<Protocol>{context_, protocol_}.open(async::open),
-        [*this](socket_handle<Protocol> handle) {
+        socket<Protocol>{context_, protocol_}.open(), [*this](socket_handle<Protocol> handle) {
           int one = 1;
           throw_on_error(::setsockopt(
             handle.fd_, SOL_SOCKET, SO_REUSEADDR, &one, static_cast<socklen_t>(sizeof(int))));

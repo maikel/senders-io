@@ -16,9 +16,12 @@
 #pragma once
 
 #include "../concepts.hpp"
+#include "stdexec/__detail/__execution_fwd.hpp"
 
 #include <exec/env.hpp>
 #include <exec/sequence_senders.hpp>
+#include <stdexec/__detail/__operation_states.hpp>
+#include <utility>
 
 namespace exec {
   namespace sequence_queries {
@@ -102,7 +105,7 @@ namespace exec {
     using namespace stdexec;
 
     struct get_sequence_env_t {
-      template <sequence_sender<no_env> Sequence>
+      template <sequence_sender Sequence>
         requires tag_invocable<get_sequence_env_t, const Sequence&>
       constexpr tag_invoke_result_t< get_sequence_env_t, const Sequence&>
         operator()(const Sequence& seq) const noexcept {
@@ -110,14 +113,14 @@ namespace exec {
         return tag_invoke(*this, seq);
       }
 
-      template <sequence_sender<no_env> Sequence>
+      template <sequence_sender Sequence>
         requires(!tag_invocable<get_sequence_env_t, const Sequence&>)
       constexpr empty_env operator()(const Sequence& seq) const noexcept {
         return {};
       }
 
       template <sender Sequence>
-        requires(!sequence_sender<Sequence, no_env>)
+        requires(!sequence_sender<Sequence>)
       constexpr auto operator()(const Sequence& seq) const noexcept {
         return make_env(
           with(cardinality_t{}, std::integral_constant<size_t, 1>{}),
@@ -153,7 +156,35 @@ namespace exec {
     }
   }
 
-  template <class _Sequence, class _Env>
-  using item_completion_signatures_of_t =
-    exec::__concat_item_signatures_t<exec::item_types_of_t<_Sequence, _Env>, _Env>;
+  namespace item_ {
+    template <class ItemTypes>
+    struct ItemTypes_ { };
+
+    template <stdexec::sender Sender>
+    struct ItemTypes_<exec::item_types<Sender>> {
+      using __t = Sender;
+    };
+
+    template <class ItemTypes>
+    concept valid_item_types = requires { typename ItemTypes_<ItemTypes>::__t; };
+  }
+
+  using item_::valid_item_types;
+
+  template <valid_item_types ItemTypes>
+  using item_sender_t = typename item_::ItemTypes_<ItemTypes>::__t;
+
+  template <class ItemTypes, class Receiver>
+  concept item_sender_to = requires {
+    requires stdexec::sender_to<item_sender_t<ItemTypes>, Receiver>;
+  };
+
+  template <class ItemTypes, class Receiver>
+  using item_connect_result_t = stdexec::connect_result_t<item_sender_t<ItemTypes>, Receiver>;
+
+  template <class Sequence, class... Env>
+  using item_completion_signatures_of_t = //
+    stdexec::__mapply<
+      stdexec::__mbind_back_q<stdexec::completion_signatures_of_t, Env...>,
+      exec::item_types_of_t<Sequence, Env...>>;
 }

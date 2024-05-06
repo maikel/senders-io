@@ -15,9 +15,9 @@
  */
 #pragma once
 
-#include "./mutable_buffer.hpp"
-
 #include <span>
+
+#include "./mutable_buffer.hpp"
 
 namespace sio {
   class mutable_buffer_span;

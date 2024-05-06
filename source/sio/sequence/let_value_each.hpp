@@ -16,6 +16,7 @@
 #pragma once
 
 #include "./transform_each.hpp"
+#include "sio/concepts.hpp"
 
 namespace sio {
   struct let_value_each_t {
@@ -36,7 +37,7 @@ namespace sio {
 
     template <class Fn>
     auto operator()(Fn&& fn) const -> binder_back<let_value_each_t, Fn> {
-      return {{}, {}, {static_cast<Fn&&>(fn)}};
+      return {{static_cast<Fn&&>(fn)}, {}, {}};
     }
   };
 

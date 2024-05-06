@@ -15,36 +15,30 @@
  */
 #pragma once
 
-#include "../assert.hpp"
-#include "../io_concepts.hpp"
-
-#include "../sequence/buffered_sequence.hpp"
-#include "../sequence/reduce.hpp"
-
-#include "../const_buffer_span.hpp"
-#include "../mutable_buffer_span.hpp"
-
-#include "exec/linux/io_uring_context.hpp"
-#include "sio/concepts.hpp"
-#include "sio/ip/endpoint.hpp"
-
-#include <exception>
-#include <filesystem>
-#include <span>
-
 #include <sys/socket.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/uio.h>
 
+#include <filesystem>
+
+#include <exec/linux/io_uring_context.hpp>
+
+#include "../assert.hpp"
+#include "../io_concepts.hpp"
+#include "../sequence/buffered_sequence.hpp"
+#include "../sequence/reduce.hpp"
+#include "../const_buffer_span.hpp"
+#include "../mutable_buffer_span.hpp"
+#include "../concepts.hpp"
+
 namespace sio::io_uring {
   struct env {
     exec::io_uring_scheduler scheduler;
 
-    friend exec::io_uring_scheduler tag_invoke(
-      stdexec::get_completion_scheduler_t<stdexec::set_value_t>,
-      const env& self) noexcept {
-      return self.scheduler;
+    auto query(stdexec::get_completion_scheduler_t<stdexec::set_value_t>) const noexcept
+      -> exec::io_uring_scheduler {
+      return scheduler;
     }
   };
 
@@ -101,6 +95,8 @@ namespace sio::io_uring {
   using close_operation = io_task_facade<close_operation_base<Receiver>>;
 
   struct close_sender {
+    using sender_concept = stdexec::sender_t;
+
     using completion_signatures = stdexec::completion_signatures<
       stdexec::set_value_t(),
       stdexec::set_error_t(std::error_code),
@@ -110,12 +106,12 @@ namespace sio::io_uring {
     int fd_;
 
     template <class Receiver>
-    close_operation<Receiver> connect(stdexec::connect_t, Receiver rcvr) const noexcept {
+    auto connect(Receiver rcvr) noexcept -> close_operation<Receiver> {
       return close_operation<Receiver>{
         std::in_place, *context_, static_cast<Receiver&&>(rcvr), fd_};
     }
 
-    env get_env(stdexec::get_env_t) const noexcept {
+    env get_env() const noexcept {
       return {context_->get_scheduler()};
     }
   };
@@ -140,7 +136,7 @@ namespace sio::io_uring {
       return fd_;
     }
 
-    close_sender close(async::close_t) const noexcept {
+    close_sender close() const noexcept {
       return {context_, fd_};
     }
   };
@@ -193,7 +189,7 @@ namespace sio::io_uring {
   using open_operation = stoppable_task_facade<open_operation_base<Receiver>>;
 
   struct open_sender {
-    using is_sender = void;
+    using sender_concept = stdexec::sender_t;
 
     using completion_signatures = stdexec::completion_signatures<
       stdexec::set_value_t(native_fd_handle),
@@ -208,17 +204,13 @@ namespace sio::io_uring {
       , data_{static_cast<open_data&&>(data)} {
     }
 
-    template <decays_to<open_sender> Self, stdexec::receiver_of<completion_signatures> Receiver>
-    static open_operation<Receiver>
-      connect(Self&& self, stdexec::connect_t, Receiver rcvr) noexcept {
+    template <stdexec::receiver_of<completion_signatures> Receiver>
+    auto connect(Receiver rcvr) noexcept -> open_operation<Receiver> {
       return {
-        std::in_place,
-        static_cast<Self&&>(self).data_,
-        *self.context_,
-        static_cast<Receiver&&>(rcvr)};
+        std::in_place, static_cast<open_data&&>(data_), *context_, static_cast<Receiver&&>(rcvr)};
     }
 
-    env get_env(stdexec::get_env_t) const noexcept {
+    env get_env() const noexcept {
       return {context_->get_scheduler()};
     }
   };
@@ -288,7 +280,7 @@ namespace sio::io_uring {
     stoppable_task_facade<io_operation_base<read_submission_single, Receiver>>;
 
   struct read_sender {
-    using is_sender = void;
+    using sender_concept = stdexec::sender_t;
 
     using completion_signatures = stdexec::completion_signatures<
       stdexec::set_value_t(std::size_t),
@@ -312,18 +304,18 @@ namespace sio::io_uring {
     }
 
     template <stdexec::receiver_of<completion_signatures> Receiver>
-    read_operation<Receiver> connect(stdexec::connect_t, Receiver rcvr) const noexcept {
+    auto connect(Receiver rcvr) noexcept -> read_operation<Receiver> {
       return read_operation<Receiver>{
         std::in_place, *context_, buffers_, fd_, offset_, static_cast<Receiver&&>(rcvr)};
     }
 
-    env get_env(stdexec::get_env_t) const noexcept {
+    env get_env() const noexcept {
       return {context_->get_scheduler()};
     }
   };
 
   struct read_sender_single {
-    using is_sender = void;
+    using sender_concept = stdexec::sender_t;
 
     using completion_signatures = stdexec::completion_signatures<
       stdexec::set_value_t(std::size_t),
@@ -347,12 +339,12 @@ namespace sio::io_uring {
     }
 
     template <stdexec::receiver_of<completion_signatures> Receiver>
-    read_operation_single<Receiver> connect(stdexec::connect_t, Receiver rcvr) const noexcept {
+    auto connect(Receiver rcvr) noexcept -> read_operation_single<Receiver> {
       return read_operation_single<Receiver>{
         std::in_place, *context_, buffers_, fd_, offset_, static_cast<Receiver&&>(rcvr)};
     }
 
-    env get_env(stdexec::get_env_t) const noexcept {
+    env get_env() const noexcept {
       return {context_->get_scheduler()};
     }
   };
@@ -395,7 +387,7 @@ namespace sio::io_uring {
     stoppable_task_facade<io_operation_base<write_submission_single, Receiver>>;
 
   struct write_sender {
-    using is_sender = void;
+    using sender_concept = stdexec::sender_t;
 
     using completion_signatures = stdexec::completion_signatures<
       stdexec::set_value_t(std::size_t),
@@ -419,18 +411,18 @@ namespace sio::io_uring {
     }
 
     template <stdexec::receiver_of<completion_signatures> Receiver>
-    write_operation<Receiver> connect(stdexec::connect_t, Receiver rcvr) const noexcept {
+    auto connect(Receiver rcvr) noexcept -> write_operation<Receiver> {
       return write_operation<Receiver>{
         std::in_place, *context_, buffers_, fd_, offset_, static_cast<Receiver&&>(rcvr)};
     }
 
-    env get_env(stdexec::get_env_t) const noexcept {
+    env get_env() const noexcept {
       return {context_->get_scheduler()};
     }
   };
 
   struct write_sender_single {
-    using is_sender = void;
+    using sender_concept = stdexec::sender_t;
 
     using completion_signatures = stdexec::completion_signatures<
       stdexec::set_value_t(std::size_t),
@@ -454,12 +446,12 @@ namespace sio::io_uring {
     }
 
     template <stdexec::receiver_of<completion_signatures> Receiver>
-    write_operation_single<Receiver> connect(stdexec::connect_t, Receiver rcvr) const noexcept {
+    auto connect(Receiver rcvr) noexcept -> write_operation_single<Receiver> {
       return write_operation_single<Receiver>{
         std::in_place, *context_, buffers_, fd_, offset_, static_cast<Receiver&&>(rcvr)};
     }
 
-    env get_env(stdexec::get_env_t) const noexcept {
+    env get_env() const noexcept {
       return {context_->get_scheduler()};
     }
   };
@@ -503,48 +495,36 @@ namespace sio::io_uring {
       : native_fd_handle{fd} {
     }
 
-    write_sender write_some(async::write_some_t, const_buffers_type data) const noexcept {
+    write_sender write_some(const_buffers_type data) const noexcept {
       return write_sender(*this->context_, data, this->fd_);
     }
 
-    write_sender_single write_some(async::write_some_t, const_buffer_type data) const noexcept {
+    write_sender_single write_some(const_buffer_type data) const noexcept {
       return write_sender_single(*this->context_, data, this->fd_);
     }
 
-    auto write(async::write_t, std::span<const_buffer> data) const noexcept {
-      return reduce(
-        buffered_sequence<write_factory, std::span<const_buffer>>(
-          write_factory{this->context_, this->fd_}, data),
-        0ull);
+    // auto write(std::span<const_buffer> data) const noexcept {
+    //   return reduce(buffered_sequence(write_factory{this->context_, this->fd_}, data), 0ull);
+    // }
+
+    auto write(const_buffer_type data) const noexcept {
+      return reduce(buffered_sequence(write_factory{this->context_, this->fd_}, data), 0ull);
     }
 
-    auto write(async::write_t, const_buffer_type data) const noexcept {
-      return reduce(
-        buffered_sequence<write_factory, const_buffer>(
-          write_factory{this->context_, this->fd_}, data),
-        0ull);
-    }
-
-    read_sender read_some(async::read_some_t, buffers_type buffer) const noexcept {
+    read_sender read_some(buffers_type buffer) const noexcept {
       return read_sender(*this->context_, buffer, this->fd_);
     }
 
-    read_sender_single read_some(async::read_some_t, buffer_type buffer) const noexcept {
+    read_sender_single read_some(buffer_type buffer) const noexcept {
       return read_sender_single(*this->context_, buffer, this->fd_);
     }
 
-    auto read(async::read_t, std::span<mutable_buffer> buffer) const noexcept {
-      return reduce(
-        buffered_sequence<read_factory, std::span<mutable_buffer>>(
-          read_factory{this->context_, this->fd_}, buffer),
-        0ull);
-    }
+    // auto read(std::span<mutable_buffer> buffer) const noexcept {
+    //   return reduce(buffered_sequence(read_factory{this->context_, this->fd_}, buffer), 0ull);
+    // }
 
-    auto read(async::read_t, buffer_type buffer) const noexcept {
-      return reduce(
-        buffered_sequence<read_factory, mutable_buffer>(
-          read_factory{this->context_, this->fd_}, buffer),
-        0ull);
+    auto read(buffer_type buffer) const noexcept {
+      return reduce(buffered_sequence(read_factory{this->context_, this->fd_}, buffer), 0ull);
     }
   };
 
@@ -562,52 +542,38 @@ namespace sio::io_uring {
     using byte_stream::write_some;
     using byte_stream::write;
 
-    write_sender write_some(async::write_some_t, const_buffers_type buffers, extent_type offset)
-      const noexcept {
+    write_sender write_some(const_buffers_type buffers, extent_type offset) const noexcept {
       return write_sender{*this->context_, buffers, this->fd_, offset};
     }
 
-    write_sender_single
-      write_some(async::write_some_t, const_buffer_type buffer, extent_type offset) const noexcept {
+    write_sender_single write_some(const_buffer_type buffer, extent_type offset) const noexcept {
       return write_sender_single{*this->context_, buffer, this->fd_, offset};
     }
 
-    read_sender
-      read_some(async::read_some_t, buffers_type buffers, extent_type offset) const noexcept {
+    read_sender read_some(buffers_type buffers, extent_type offset) const noexcept {
       return read_sender(*this->context_, buffers, this->fd_, offset);
     }
 
-    read_sender_single
-      read_some(async::read_some_t, buffer_type buffer, extent_type offset) const noexcept {
+    read_sender_single read_some(buffer_type buffer, extent_type offset) const noexcept {
       return read_sender_single(*this->context_, buffer, this->fd_, offset);
     }
 
-    auto write(async::write_t, std::span<const_buffer> data, extent_type offset) const noexcept {
+    // auto write(std::span<const_buffer> data, extent_type offset) const noexcept {
+    //   return reduce(
+    //     buffered_sequence(write_factory{this->context_, this->fd_}, data, offset), 0ull);
+    // }
+
+    auto write(const_buffer_type data, extent_type offset) const noexcept {
       return reduce(
-        buffered_sequence<write_factory, std::span<const_buffer>>(
-          write_factory{this->context_, this->fd_}, data, offset),
-        0ull);
+        buffered_sequence(write_factory{this->context_, this->fd_}, data, offset), 0ull);
     }
 
-    auto write(async::write_t, const_buffer_type data, extent_type offset) const noexcept {
-      return reduce(
-        buffered_sequence<write_factory, const_buffer>(
-          write_factory{this->context_, this->fd_}, data, offset),
-        0ull);
-    }
+    // auto read(std::span<mutable_buffer> data, extent_type offset) const noexcept {
+    //   return reduce(buffered_sequence(read_factory{this->context_, this->fd_}, data, offset), 0ull);
+    // }
 
-    auto read(async::read_t, std::span<mutable_buffer> data, extent_type offset) const noexcept {
-      return reduce(
-        buffered_sequence<read_factory, std::span<mutable_buffer>>(
-          read_factory{this->context_, this->fd_}, data, offset),
-        0ull);
-    }
-
-    auto read(async::read_t, buffer_type data, extent_type offset) const noexcept {
-      return reduce(
-        buffered_sequence<read_factory, mutable_buffer>(
-          read_factory{this->context_, this->fd_}, data, offset),
-        0ull);
+    auto read(buffer_type data, extent_type offset) const noexcept {
+      return reduce(buffered_sequence(read_factory{this->context_, this->fd_}, data, offset), 0ull);
     }
   };
 
@@ -628,7 +594,7 @@ namespace sio::io_uring {
       , path_{static_cast<std::filesystem::path&&>(path)} {
     }
 
-    auto open(async::open_t) const {
+    auto open() const {
       open_data data_{path_, AT_FDCWD, O_PATH, 0};
       return stdexec::then(open_sender{context_, data_}, [](native_fd_handle fd) noexcept {
         return path_handle{fd};
@@ -655,7 +621,7 @@ namespace sio::io_uring {
           static_cast<mode_t>(mode)} {
     }
 
-    auto open(async::open_t) const noexcept {
+    auto open() const noexcept {
       return stdexec::then(open_sender{context_, data_}, [](native_fd_handle fd) noexcept {
         return seekable_byte_stream{fd};
       });
@@ -668,12 +634,11 @@ namespace sio::io_uring {
     using path_type = sio::io_uring::path_resource;
     using file_type = sio::io_uring::file_resource;
 
-    path_type open_path(async::open_path_t, std::filesystem::path path) const noexcept {
+    path_type open_path(std::filesystem::path path) const noexcept {
       return path_type(*context_, static_cast<std::filesystem::path&&>(path));
     }
 
     file_type open_file(
-      async::open_file_t,
       std::filesystem::path path,
       path_handle base,
       async::mode mode,

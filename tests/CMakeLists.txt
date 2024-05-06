@@ -12,18 +12,16 @@ find_package(Catch2 REQUIRED)
 add_executable(test_sio
   test_main.cpp
   test_const_buffer_subspan.cpp
-  sequence/test_ignore_all.cpp
   sequence/test_first.cpp
   sequence/test_last.cpp
-  sequence/test_any_sequence_of.cpp
-  sequence/test_iterate.cpp
-  sequence/test_empty_sequence.cpp
-  sequence/test_first.cpp
   sequence/test_fork.cpp
   sequence/test_merge_each.cpp
   sequence/test_scan.cpp
   sequence/test_transform_each.cpp
+  sequence/test_repeat.cpp
   sequence/test_zip.cpp
+  sequence/test_finally.cpp
+  sequence/test_buffered_sequence.cpp
   test_async_resource.cpp
   test_file_handle.cpp
   test_async_accept.cpp

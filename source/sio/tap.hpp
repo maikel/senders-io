@@ -2,28 +2,30 @@
 
 #include "./concepts.hpp"
 #include "./sequence/sequence_concepts.hpp"
+#include <stdexec/__detail/__receivers.hpp>
 
 namespace sio {
   namespace tap_ {
     template <class Receiver>
     struct receiver_ref {
+      using receiver_concept = stdexec::receiver_t;
       Receiver& receiver_;
 
-      stdexec::env_of_t<Receiver> get_env(stdexec::get_env_t) const noexcept {
+      stdexec::env_of_t<Receiver> get_env() const noexcept {
         return stdexec::get_env(receiver_);
       }
 
-      void set_value(stdexec::set_value_t) && noexcept {
+      void set_value() && noexcept {
         stdexec::set_value(static_cast<Receiver&&>(receiver_));
       }
 
       template <class Error>
         requires callable<stdexec::set_error_t, Receiver&&, Error>
-      void set_error(stdexec::set_error_t, Error&& error) && noexcept {
+      void set_error(Error&& error) && noexcept {
         stdexec::set_error(static_cast<Receiver&&>(receiver_), static_cast<Error&&>(error));
       }
 
-      void set_stopped(stdexec::set_stopped_t) && noexcept
+      void set_stopped() && noexcept
         requires callable<stdexec::set_stopped_t, Receiver&&>
       {
         exec::set_value_unless_stopped(static_cast<Receiver&&>(receiver_));
@@ -76,14 +78,14 @@ namespace sio {
 
     template <class FinalSender, class Receiver>
     struct initial_receiver {
-      using is_receiver = void;
+      using receiver_concept = stdexec::receiver_t;
       operation_base_rcvr<FinalSender, Receiver>* op_;
 
-      stdexec::env_of_t<Receiver> get_env(stdexec::get_env_t) const noexcept {
+      stdexec::env_of_t<Receiver> get_env() const noexcept {
         return stdexec::get_env(op_->receiver_);
       }
 
-      void set_value(stdexec::set_value_t) && noexcept {
+      void set_value() && noexcept {
         if (op_->success_.load(std::memory_order_relaxed)) {
           stdexec::start(op_->final_op_);
         } else {
@@ -91,7 +93,7 @@ namespace sio {
         }
       }
 
-      void set_stopped(stdexec::set_stopped_t) && noexcept
+      void set_stopped() && noexcept
         requires callable<stdexec::set_stopped_t, Receiver&&>
       {
         if (op_->success_.load(std::memory_order_relaxed)) {
@@ -112,21 +114,21 @@ namespace sio {
 
       operation(InitialSender&& initial, FinalSender&& final, Receiver receiver)
         : operation_base_rcvr<FinalSender, Receiver>(
-          static_cast<FinalSender&&>(final),
-          static_cast<Receiver&&>(receiver))
+            static_cast<FinalSender&&>(final),
+            static_cast<Receiver&&>(receiver))
         , first_op_(stdexec::connect(
             this->make_initial_sender(static_cast<InitialSender&&>(initial)),
             initial_receiver<FinalSender, Receiver>{this})) {
       }
 
-      void start(stdexec::start_t) noexcept {
+      void start() noexcept {
         stdexec::start(first_op_);
       }
     };
 
     template <class InitialSender, class FinalSender>
     struct sequence {
-      using is_sender = exec::sequence_tag;
+      using sender_concept = exec::sequence_sender_t;
 
       InitialSender initial_;
       FinalSender final_;
@@ -134,7 +136,7 @@ namespace sio {
       using item_types = exec::item_types<tap_next_sender_of_t<InitialSender, FinalSender>>;
 
       template <decays_to<sequence> Self, stdexec::receiver Receiver>
-      static auto subscribe(Self&& self, exec::subscribe_t, Receiver receiver)
+      friend auto tag_invoke(exec::subscribe_t, Self&& self, Receiver receiver)
         -> operation<copy_cvref_t<Self, InitialSender>, copy_cvref_t<Self, FinalSender>, Receiver> {
         return {
           static_cast<Self&&>(self).initial_,
@@ -142,9 +144,11 @@ namespace sio {
           static_cast<Receiver&&>(receiver)};
       }
 
-      template <decays_to<sequence> Self, class Env>
-      static auto get_completion_signatures(Self&&, stdexec::get_completion_signatures_t, Env&&)
-        -> stdexec::completion_signatures_of_t<FinalSender, Env>;
+      template <class Env>
+      auto
+        get_completion_signatures(Env&&) -> stdexec::completion_signatures_of_t<FinalSender, Env> {
+        return {};
+      }
     };
 
     struct tap_t {

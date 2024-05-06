@@ -13,57 +13,38 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-
 #include "sio/sequence/merge_each.hpp"
 
 #include "sio/sequence/first.hpp"
 #include "sio/sequence/ignore_all.hpp"
 #include "sio/sequence/iterate.hpp"
 #include "sio/sequence/then_each.hpp"
+#include "common/test_receiver.hpp"
 
 #include <catch2/catch.hpp>
+#include <ranges>
 
-struct any_receiver {
-  template <class Sender>
-  auto set_next(exec::set_next_t, Sender&&) noexcept {
-    return stdexec::just();
-  }
-
-  void set_value(stdexec::set_value_t) && noexcept {
-  }
-
-  void set_stopped(stdexec::set_stopped_t) && noexcept {
-  }
-
-  template <class E>
-  void set_error(stdexec::set_error_t, E&&) && noexcept {
-  }
-
-  stdexec::empty_env get_env(stdexec::get_env_t) const noexcept {
-    return {};
-  }
-};
-
-TEST_CASE("merge_each - just", "[merge_each]") {
+TEST_CASE("merge_each - just", "[sio][merge_each]") {
   auto merge = sio::merge_each(stdexec::just(42));
   using merge_t = decltype(merge);
   using env = stdexec::empty_env;
   STATIC_REQUIRE(stdexec::sender_in<merge_t, env>);
   STATIC_REQUIRE(exec::sequence_sender_in<merge_t, env>);
-  STATIC_REQUIRE(exec::sequence_sender_to<merge_t, any_receiver>);
-  auto op = exec::subscribe(merge, any_receiver{});
+  STATIC_REQUIRE(exec::sequence_sender_to<merge_t, any_sequence_receiver>);
+  auto op = exec::subscribe(merge, any_sequence_receiver{});
   stdexec::start(op);
 }
 
-TEST_CASE("merge_each - just and first", "[merge_each][first]") {
+TEST_CASE("merge_each - just and first", "[sio][merge_each][first]") {
   auto merge = sio::merge_each(stdexec::just(42));
   auto first = sio::first(merge);
   auto [v] = stdexec::sync_wait(first).value();
   CHECK(v == 42);
 }
 
-TEST_CASE("merge_each - two senders count with ignore_all", "[merge_each][ignore_all][then_each]") {
+TEST_CASE(
+  "merge_each - two senders count with ignore_all",
+  "[sio][merge_each][ignore_all][then_each]") {
   int count = 0;
   auto merge = sio::merge_each(stdexec::just(42), stdexec::just(42)) //
              | sio::then_each([&](int value) {
@@ -76,10 +57,10 @@ TEST_CASE("merge_each - two senders count with ignore_all", "[merge_each][ignore
 
 TEST_CASE(
   "merge_each - iterate and senders count with ignore_all",
-  "[merge_each][ignore_all][then_each][iterate]") {
+  "[sio][merge_each][ignore_all][then_each][iterate]") {
   std::array<int, 2> arr{42, 42};
   int count = 0;
-  auto merge = sio::merge_each(stdexec::just(42), sio::iterate(std::ranges::views::all(arr))) //
+  auto merge = sio::merge_each(stdexec::just(42), sio::iterate(std::views::all(arr))) //
              | sio::then_each([&](int value) {
                  ++count;
                  CHECK(value == 42);
@@ -88,30 +69,25 @@ TEST_CASE(
   CHECK(count == 3);
 }
 
-// template <class _Sequence, class _Env>
-// using transform_t = stdexec::__mapply<
-//   stdexec::__transform<stdexec::__mbind_back_q<exec::__to_sequence_completion_signatures, _Env>>,
-//   exec::item_types_of_t< _Sequence, _Env>>;
-
-TEST_CASE("merge_each - for subsequences", "[merge_each][then_each][iterate]") {
+TEST_CASE(
+  "merge_each - test merge_each accepts only an iterate sender",
+  "[sio][merge_each][iterate][first]") {
   std::array<int, 2> indices{1, 2};
-  int counter = 0;
-  auto merge =
-    sio::iterate(std::ranges::views::all(indices))                                              //
-    | sio::then_each([](int i) { return sio::merge_each(stdexec::just(i), stdexec::just(i)); }) //
-    | sio::merge_each()                                                                         //
-    | sio::then_each([&](int value) {
-        if (counter == 0)
-          CHECK(value == 1);
-        else if (counter == 1)
-          CHECK(value == 1);
-        else if (counter == 2)
-          CHECK(value == 2);
-        else if (counter == 3)
-          CHECK(value == 2);
-        else
-          CHECK(false);
-        ++counter;
-      });
-  CHECK(stdexec::sync_wait(sio::ignore_all(merge)));
+  auto sndr = sio::iterate(std::views::all(indices)) //
+            | sio::merge_each()                      //
+            | sio::first();
+  auto [v] = stdexec::sync_wait(std::move(sndr)).value();
+  CHECK(v == 1);
+}
+
+TEST_CASE(
+  "merge_each - test merge_each accepts two iterate senders",
+  "[sio][merge_each][iterate][first]") {
+  std::array<int, 2> indices{1, 2};
+  auto sndr = sio::merge_each(
+                sio::iterate(std::views::all(indices)),
+                sio::iterate(std::views::all(indices))) //
+            | sio::first();
+  auto [v] = stdexec::sync_wait(std::move(sndr)).value();
+  CHECK(v == 1);
 }

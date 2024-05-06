@@ -15,7 +15,7 @@
  */
 #pragma once
 
-#define STDEXEC_ENABLE_EXTRA_TYPE_CHECKING() 0
+#include <stdexec/__detail/__domain.hpp>
 #include <stdexec/execution.hpp>
 
 namespace sio {
@@ -73,6 +73,4 @@ namespace sio {
   concept nothrow_emplaceable = requires(Variant& v, Args&&... args) {
     { v.template emplace<Type>(static_cast<Args&&>(args)...) } noexcept;
   };
-
-  using nullable_variant = stdexec::__nullable_variant_t;
 }

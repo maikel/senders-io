@@ -19,9 +19,9 @@
 #include "./sequence/let_value_each.hpp"
 #include "./sequence/zip.hpp"
 
-#include "./deferred.hpp"
-
 #include <exec/finally.hpp>
+#include <exec/sequence_senders.hpp>
+#include <stdexec/__detail/__transform_completion_signatures.hpp>
 
 namespace sio::async {
   namespace async_resource_ {
@@ -29,21 +29,19 @@ namespace sio::async {
     extern const open_t open;
 
     template <class Tp>
-    concept has_open_member_cpo = requires(Tp&& obj) { static_cast<Tp&&>(obj).open(open); };
+    concept has_open_member_cpo = requires(Tp&& obj) { static_cast<Tp&&>(obj).open(); };
 
     template <class Tp>
     concept nothrow_open_member_cpo = requires(Tp&& obj) {
-      { static_cast<Tp&&>(obj).open(open) } noexcept;
+      { static_cast<Tp&&>(obj).open() } noexcept;
     };
 
     template <class Tp>
-    concept has_open_static_member_cpo = requires(Tp&& obj) {
-      Tp::open(static_cast<Tp&&>(obj), open);
-    };
+    concept has_open_static_member_cpo = requires(Tp&& obj) { Tp::open(static_cast<Tp&&>(obj)); };
 
     template <class Tp>
     concept nothrow_open_static_member_cpo = requires(Tp&& obj) {
-      { Tp::open(static_cast<Tp&&>(obj), open) } noexcept;
+      { Tp::open(static_cast<Tp&&>(obj)) } noexcept;
     };
 
     struct open_t {
@@ -52,9 +50,9 @@ namespace sio::async {
       auto operator()(Res& resource) const
         noexcept(nothrow_open_member_cpo<Res&> || nothrow_open_static_member_cpo<Res&>) {
         if constexpr (has_open_member_cpo<Res&>) {
-          return resource.open(open);
+          return resource.open();
         } else {
-          return Res::open(resource, open);
+          return Res::open(resource);
         }
       }
     };
@@ -63,21 +61,19 @@ namespace sio::async {
     extern const close_t close;
 
     template <class Tp>
-    concept has_close_member_cpo = requires(Tp&& obj) { static_cast<Tp&&>(obj).close(close); };
+    concept has_close_member_cpo = requires(Tp&& obj) { static_cast<Tp&&>(obj).close(); };
 
     template <class Tp>
     concept nothrow_close_member_cpo = requires(Tp&& obj) {
-      { static_cast<Tp&&>(obj).close(close) } noexcept;
+      { static_cast<Tp&&>(obj).close() } noexcept;
     };
 
     template <class Tp>
-    concept has_close_static_member_cpo = requires(Tp&& obj) {
-      Tp::close(static_cast<Tp&&>(obj), close);
-    };
+    concept has_close_static_member_cpo = requires(Tp&& obj) { Tp::close(static_cast<Tp&&>(obj)); };
 
     template <class Tp>
     concept nothrow_close_static_member_cpo = requires(Tp&& obj) {
-      { Tp::close(static_cast<Tp&&>(obj), close) } noexcept;
+      { Tp::close(static_cast<Tp&&>(obj)) } noexcept;
     };
 
     struct close_t {
@@ -86,9 +82,9 @@ namespace sio::async {
       auto operator()(const Token& token) const noexcept(
         nothrow_close_member_cpo<const Token&> || nothrow_close_static_member_cpo<const Token&>) {
         if constexpr (has_close_member_cpo<const Token&>) {
-          return token.close(close);
+          return token.close();
         } else {
-          return Token::close(token, close);
+          return Token::close(token);
         }
       }
     };
@@ -103,14 +99,14 @@ namespace sio::async {
   using async_resource_::close;
 
   template <class Token>
-  using close_sender_of_t = decltype(close(std::declval<Token>()));
+  using close_sender_of_t = decltype(sio::async::close(std::declval<Token>()));
 
   template <class Resource>
-  using open_sender_of_t = decltype(open(std::declval<Resource&>()));
+  using open_sender_of_t = decltype(sio::async::open(std::declval<Resource&>()));
 
   template <class Resource, class Env>
   concept with_open = requires(Resource& resource) {
-    { open(resource) } -> stdexec::__single_typed_sender<Env>;
+    { sio::async::open(resource) } -> stdexec::__single_value_sender<Env>;
   };
 
   template <class Resource, class Env>
@@ -120,12 +116,12 @@ namespace sio::async {
   template <class Sndr, class Env = stdexec::empty_env>
   concept sender_of_void =                              //
     stdexec::sender_of<Sndr, stdexec::set_value_t()> && //
-    stdexec::__single_typed_sender<Sndr, Env>;
+    stdexec::__single_value_sender<Sndr, Env>;
 
   template <class Resource, class Env = stdexec::empty_env>
   concept with_open_and_close =
     with_open<Resource, Env> && requires(Resource& resource, token_of_t<Resource, Env>& token) {
-      { close(token) } -> sender_of_void;
+      { sio::async::close(token) } -> sender_of_void;
     };
 
   namespace async_resource_ {
@@ -145,23 +141,23 @@ namespace sio::async {
 
     template <class Receiver>
     struct final_receiver {
-      using is_receiver = void;
+      using receiver_concept = stdexec::receiver_t;
       operation_rcvr_base<Receiver>* op_;
 
-      stdexec::env_of_t<Receiver> get_env(stdexec::get_env_t) const noexcept {
+      stdexec::env_of_t<Receiver> get_env() const noexcept {
         return stdexec::get_env(op_->rcvr_);
       }
 
-      void set_value(stdexec::set_value_t) && noexcept {
+      void set_value() && noexcept {
         stdexec::set_value(static_cast<Receiver&&>(op_->rcvr_));
       }
 
       template <class Err>
-      void set_error(stdexec::set_error_t, Err&& err) && noexcept {
+      void set_error(Err&& err) && noexcept {
         stdexec::set_error(static_cast<Receiver&&>(op_->rcvr_), static_cast<Err&&>(err));
       }
 
-      void set_stopped(stdexec::set_stopped_t) && noexcept {
+      void set_stopped() && noexcept {
         exec::set_value_unless_stopped(static_cast<Receiver&&>(op_->rcvr_));
       }
     };
@@ -171,22 +167,22 @@ namespace sio::async {
       std::optional<Token>& token_;
       [[no_unique_address]] ItemReceiver rcvr_;
 
-      void start(stdexec::start_t) noexcept {
+      void start() noexcept {
         stdexec::set_value(static_cast<ItemReceiver&&>(rcvr_), static_cast<Token&&>(*token_));
       }
     };
 
     template <class Token>
     struct use_sender {
-      using is_sender = void;
+      using sender_concept = stdexec::sender_t;
 
       std::optional<Token>& token_;
 
       using completion_signatures = stdexec::completion_signatures<stdexec::set_value_t(Token&&)>;
 
       template <class ItemReceiver>
-      auto connect(stdexec::connect_t, ItemReceiver rcvr) const
-        noexcept(nothrow_decay_copyable<ItemReceiver>) -> use_operation<Token, ItemReceiver> {
+      auto connect(ItemReceiver rcvr) noexcept(
+        nothrow_decay_copyable<ItemReceiver>) -> use_operation<Token, ItemReceiver> {
         return {token_, static_cast<ItemReceiver&&>(rcvr)};
       }
     };
@@ -207,20 +203,21 @@ namespace sio::async {
 
     template <class Token, class Receiver>
     struct open_receiver {
-      using is_receiver = void;
+      using receiver_concept = stdexec::receiver_t;
 
       operation_base<Token, Receiver>* op_;
 
-      stdexec::env_of_t<Receiver> get_env(stdexec::get_env_t) const noexcept {
+      stdexec::env_of_t<Receiver> get_env() const noexcept {
         return stdexec::get_env(op_->rcvr_);
       }
 
-      void set_value(stdexec::set_value_t, Token token) && noexcept {
+      void set_value(Token token) && noexcept {
         try {
           Token& t = op_->token_.emplace(static_cast<Token&&>(token));
           auto& use_op = op_->use_op_.emplace(stdexec::__conv{[&] {
             return stdexec::connect(
-              exec::finally(exec::set_next(op_->rcvr_, use_sender<Token>{op_->token_}), close(t)),
+              exec::finally(
+                exec::set_next(op_->rcvr_, use_sender<Token>{op_->token_}), sio::async::close(t)),
               final_receiver<Receiver>{op_});
           }});
           stdexec::start(use_op);
@@ -230,11 +227,11 @@ namespace sio::async {
       }
 
       template <class Err>
-      void set_error(stdexec::set_error_t, Err&& err) && noexcept {
+      void set_error(Err&& err) && noexcept {
         stdexec::set_error(static_cast<Receiver&&>(op_->rcvr_), static_cast<Err&&>(err));
       }
 
-      void set_stopped(stdexec::set_stopped_t) && noexcept {
+      void set_stopped() && noexcept {
         exec::set_value_unless_stopped(static_cast<Receiver&&>(op_->rcvr_));
       }
     };
@@ -247,36 +244,37 @@ namespace sio::async {
 
       operation(Resource resource, Receiver rcvr)
         : operation_base<Token, Receiver>{static_cast<Receiver&&>(rcvr)}
-        , open_op_{stdexec::connect(open(resource), open_receiver<Token, Receiver>{this})} {
+        , open_op_{
+            stdexec::connect(sio::async::open(resource), open_receiver<Token, Receiver>{this})} {
       }
 
-      void start(stdexec::start_t) noexcept {
+      void start() noexcept {
         stdexec::start(open_op_);
       }
     };
 
     template <class Resource>
     struct sequence {
-      using is_sender = exec::sequence_tag;
+      using sender_concept = exec::sequence_sender_t;
 
       Resource resource_;
 
       template <class Receiver>
-      auto subscribe(exec::subscribe_t, Receiver rcvr) const
-        noexcept(nothrow_decay_copyable<Receiver>) -> operation<Resource, Receiver> {
-        return {resource_, static_cast<Receiver&&>(rcvr)};
+      friend auto tag_invoke(exec::subscribe_t, sequence&& self, Receiver rcvr) noexcept(
+        nothrow_decay_copyable<Receiver>) -> operation<Resource, Receiver> {
+        return {self.resource_, static_cast<Receiver&&>(rcvr)};
       }
 
       template <class Env>
-      auto get_completion_signatures(stdexec::get_completion_signatures_t, Env) const noexcept
-        -> stdexec::make_completion_signatures<
+      auto get_completion_signatures(Env&&) const noexcept
+        -> stdexec::transform_completion_signatures_of<
           open_sender_of_t<Resource>,
           Env,
           stdexec::completion_signatures<stdexec::set_error_t(std::exception_ptr)>,
           stdexec::__mconst<stdexec::completion_signatures<>>::__f>;
 
       template <class Env>
-      auto get_item_types(exec::get_item_types_t, Env&&) const noexcept
+      friend auto tag_invoke(exec::get_item_types_t, sequence&& self, Env&&) noexcept
         -> exec::item_types<use_sender<token_of_t<Resource, Env>>> {
         return {};
       }
@@ -287,12 +285,12 @@ namespace sio::async {
 
     template <class Resource>
     concept has_use_member_cpo = requires(Resource&& resource) {
-      std::forward<Resource>(resource).use(use);
+      std::forward<Resource>(resource).use();
     };
 
     template <class Resource>
     concept has_static_use_member_cpo = requires(Resource&& resource) {
-      Resource::use(std::forward<Resource>(resource), use);
+      Resource::use(std::forward<Resource>(resource));
     };
 
     template <class Resource>
@@ -305,9 +303,9 @@ namespace sio::async {
       template <has_use_member Resource>
       auto operator()(Resource&& resource) const noexcept {
         if constexpr (has_use_member_cpo<Resource>) {
-          return resource.use(use);
+          return resource.use();
         } else {
-          return Resource::use(resource, use);
+          return Resource::use(resource);
         }
       }
 
@@ -327,12 +325,25 @@ namespace sio::async {
   template <class Resource>
   concept resource = requires(Resource&& __resource) { use(__resource); };
 
+  template <class Sequence, class Env>
+  using item_completion_signatures_of_t = //
+    stdexec::__mapply<
+      stdexec::__mbind_back_q<stdexec::completion_signatures_of_t, Env>,
+      exec::item_types_of_t<Sequence, Env>>;
+
   template <class _Sequence, class _Env>
-  using single_item_value_t = stdexec::__gather_signal<
+  using single_item_value_t = stdexec::__gather_completions<
     stdexec::set_value_t,
-    exec::item_completion_signatures_of_t<_Sequence, _Env>,
+    item_completion_signatures_of_t<_Sequence, _Env>,
     stdexec::__msingle_or<void>,
     stdexec::__q<stdexec::__msingle>>;
+
+  // template <class _Sequence, class _Env>
+  // using single_item_value_t = stdexec::__gather_signal<
+  //   stdexec::set_value_t,
+  //   exec::item_completion_signatures_of_t<_Sequence, _Env>,
+  //   stdexec::__msingle_or<void>,
+  //   stdexec::__q<stdexec::__msingle>>;
 
 
   template <resource Resource, class Env = stdexec::empty_env>

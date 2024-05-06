@@ -58,7 +58,7 @@ namespace sio {
         , base_{base} {
       }
 
-      void start(stdexec::start_t) noexcept {
+      void start() noexcept {
         base& mutex = base_;
         mutex.inflight_operations_.push_front(this);
         bool expected_lock = false;
@@ -82,12 +82,13 @@ namespace sio {
     };
 
     struct lock_sender {
+      using sender_concept = stdexec::sender_t;
       using completion_signatures = stdexec::completion_signatures<stdexec::set_value_t()>;
 
       base* mutex_;
 
       template <class Receiver>
-      lock_operation<Receiver> connect(stdexec::connect_t, Receiver receiver) const noexcept {
+      auto connect(Receiver receiver) noexcept -> lock_operation<Receiver> {
         return {*mutex_, std::move(receiver)};
       }
     };

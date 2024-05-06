@@ -110,4 +110,6 @@ namespace sio::io_uring {
     sqe_.len = buffers_.size();
     sqe = sqe_;
   }
+
+  write_submission_single::~write_submission_single() = default;
 }

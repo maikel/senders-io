@@ -18,108 +18,101 @@
 #include "./concepts.hpp"
 
 namespace sio::async {
-  struct allocate_t;
-  extern const allocate_t allocate;
 
   namespace allocate_ {
     template <class Alloc, class... Args>
     concept has_member_cust = requires(Alloc alloc, Args&&... args) {
-      { alloc.allocate(allocate, static_cast<Args&&>(args)...) };
+      { alloc.allocate(static_cast<Args&&>(args)...) };
     };
 
     template <class Alloc, class... Args>
     concept nothrow_member_cust = requires(Alloc alloc, Args&&... args) {
-      { alloc.allocate(allocate, static_cast<Args&&>(args)...) } noexcept;
+      { alloc.allocate(static_cast<Args&&>(args)...) } noexcept;
+    };
+
+    struct allocate_t {
+      template <class Alloc, class... Args>
+        requires has_member_cust<Alloc, Args...>
+      constexpr auto operator()(Alloc alloc, Args&&... args) const
+        noexcept(nothrow_member_cust<Alloc, Args...>) {
+        return alloc.allocate(static_cast<Args&&>(args)...);
+      }
     };
   }
 
-  struct allocate_t {
-    template <class Alloc, class... Args>
-      requires allocate_::has_member_cust<Alloc, Args...>
-    constexpr auto operator()(Alloc alloc, Args&&... args) const
-      noexcept(allocate_::nothrow_member_cust<Alloc, Args...>) {
-      return alloc.allocate(allocate, static_cast<Args&&>(args)...);
-    }
-  };
-
+  using allocate_::allocate_t;
   inline constexpr allocate_t allocate{};
-
-  struct async_new_t;
-  extern const async_new_t async_new;
 
   namespace async_new_ {
     template <class Alloc, class... Args>
     concept has_member_cust = requires(Alloc alloc, Args&&... args) {
-      { alloc.async_new(async_new, static_cast<Args&&>(args)...) };
+      { alloc.async_new(static_cast<Args&&>(args)...) };
     };
 
     template <class Alloc, class... Args>
     concept nothrow_member_cust = requires(Alloc alloc, Args&&... args) {
-      { alloc.async_new(async_new, static_cast<Args&&>(args)...) } noexcept;
+      { alloc.async_new(static_cast<Args&&>(args)...) } noexcept;
+    };
+
+    struct async_new_t {
+      template <class Alloc, class... Args>
+        requires has_member_cust<Alloc, Args...>
+      constexpr auto operator()(Alloc alloc, Args&&... args) const
+        noexcept(nothrow_member_cust<Alloc, Args...>) {
+        return alloc.async_new(static_cast<Args&&>(args)...);
+      }
     };
   }
 
-  struct async_new_t {
-    template <class Alloc, class... Args>
-      requires async_new_::has_member_cust<Alloc, Args...>
-    constexpr auto operator()(Alloc alloc, Args&&... args) const
-      noexcept(async_new_::nothrow_member_cust<Alloc, Args...>) {
-      return alloc.async_new(async_new, static_cast<Args&&>(args)...);
-    }
-  };
-
+  using async_new_::async_new_t;
   inline constexpr async_new_t async_new{};
-
-  struct async_new_array_t;
-  extern const async_new_array_t async_new_array;
 
   namespace async_new_array_ {
     template <class Alloc, class... Args>
     concept has_member_cust = requires(Alloc alloc, Args&&... args) {
-      { alloc.async_new_array(async_new_array, static_cast<Args&&>(args)...) };
+      { alloc.async_new_array(static_cast<Args&&>(args)...) };
     };
 
     template <class Alloc, class... Args>
     concept nothrow_member_cust = requires(Alloc alloc, Args&&... args) {
-      { alloc.async_new_array(async_new_array, static_cast<Args&&>(args)...) } noexcept;
+      { alloc.async_new_array(static_cast<Args&&>(args)...) } noexcept;
+    };
+
+    struct async_new_array_t {
+      template <class Alloc, class... Args>
+        requires has_member_cust<Alloc, Args...>
+      constexpr auto operator()(Alloc alloc, Args&&... args) const
+        noexcept(nothrow_member_cust<Alloc, Args...>) {
+        return alloc.async_new_array(static_cast<Args&&>(args)...);
+      }
     };
   }
 
-  struct async_new_array_t {
-    template <class Alloc, class... Args>
-      requires async_new_array_::has_member_cust<Alloc, Args...>
-    constexpr auto operator()(Alloc alloc, Args&&... args) const
-      noexcept(async_new_array_::nothrow_member_cust<Alloc, Args...>) {
-      return alloc.async_new_array(async_new_array, static_cast<Args&&>(args)...);
-    }
-  };
-
+  using async_new_array_::async_new_array_t;
   inline constexpr async_new_array_t async_new_array{};
-
-  struct async_delete_t;
-  extern const async_delete_t async_delete;
 
   namespace async_delete_ {
     template <class Alloc, class... Args>
     concept has_member_cust = requires(Alloc alloc, Args&&... args) {
-      { alloc.async_delete(async_delete, static_cast<Args&&>(args)...) };
+      { alloc.async_delete(static_cast<Args&&>(args)...) };
     };
 
     template <class Alloc, class... Args>
     concept nothrow_member_cust = requires(Alloc alloc, Args&&... args) {
-      { alloc.async_delete(async_delete, static_cast<Args&&>(args)...) } noexcept;
+      { alloc.async_delete(static_cast<Args&&>(args)...) } noexcept;
+    };
+
+    struct async_delete_t {
+      template <class Alloc, class... Args>
+        requires has_member_cust<Alloc, Args...>
+      constexpr auto operator()(Alloc alloc, Args&&... args) const
+        noexcept(nothrow_member_cust<Alloc, Args...>) {
+        return alloc.async_delete(static_cast<Args&&>(args)...);
+      }
     };
   }
 
-  struct async_delete_t {
-    template <class Alloc, class... Args>
-      requires async_delete_::has_member_cust<Alloc, Args...>
-    constexpr auto operator()(Alloc alloc, Args&&... args) const
-      noexcept(async_delete_::nothrow_member_cust<Alloc, Args...>) {
-      return alloc.async_delete(async_delete, static_cast<Args&&>(args)...);
-    }
-  };
-
+  using async_delete_::async_delete_t;
   inline constexpr async_delete_t async_delete{};
 
   template <class Alloc, class T, class... Args>
@@ -141,7 +134,7 @@ namespace sio::async {
     Receiver rcvr_;
     T* pointer_;
 
-    void start(stdexec::start_t) noexcept {
+    void start() noexcept {
       Receiver rcvr = static_cast<Receiver&&>(rcvr_);
       T* pointer = pointer_;
       std::destroy_at(pointer);
@@ -154,13 +147,18 @@ namespace sio::async {
 
   template <class T>
   struct delete_sender {
+    using sender_concept = stdexec::sender_t;
     using completion_signatures = stdexec::completion_signatures<stdexec::set_value_t()>;
 
     T* pointer_;
 
     template <class Receiver>
-    delete_operation<T, Receiver> connect(stdexec::connect_t, Receiver rcvr) const noexcept {
+    auto connect(Receiver rcvr) noexcept -> delete_operation<T, Receiver> {
       return {static_cast<Receiver&&>(rcvr), pointer_};
+    }
+
+    auto get_env() const noexcept -> stdexec::empty_env {
+      return {};
     }
   };
 
@@ -174,16 +172,17 @@ namespace sio::async {
     constexpr explicit new_delete_allocator(const new_delete_allocator<S>&) noexcept {
     }
 
-    auto allocate(allocate_t, std::size_t size) const {
+    auto allocate(std::size_t size) const {
       return stdexec::then(stdexec::just(size), [](std::size_t size) {
         return std::allocator<T>().allocate(size);
       });
     }
 
     template <class... Args>
-    auto async_new(async_new_t, Args&&... args) const {
+    auto async_new(Args&&... args) const {
       return stdexec::then(
-        stdexec::just(static_cast<Args&&>(args)...), []<class... As>(As&&... args) {
+        stdexec::just(static_cast<Args&&>(args)...), //
+        []<class... As>(As&&... args) {
           std::allocator<T> alloc{};
           T* ptr = alloc.allocate(1);
           try {
@@ -195,12 +194,11 @@ namespace sio::async {
         });
     }
 
-    auto async_new_array(async_new_array_t, std::size_t size) const {
-
+    auto async_new_array(std::size_t size) const {
       return stdexec::then(stdexec::just(size), [](std::size_t size) { return new T[size]; });
     }
 
-    delete_sender<T> async_delete(async_delete_t, T* ptr) const {
+    auto async_delete(T* ptr) const -> delete_sender<T> {
       return {ptr};
     }
   };

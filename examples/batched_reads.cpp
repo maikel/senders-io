@@ -1,3 +1,21 @@
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/unistd.h>
+#include <sys/ioctl.h>
+#include <getopt.h>
+
+#include <cassert>
+#include <chrono>
+#include <iostream>
+#include <memory>
+#include <random>
+#include <ranges>
+#include <string>
+#include <thread>
+#include <new>
+
+#include <exec/when_any.hpp>
+
 #include <sio/io_uring/file_handle.hpp>
 #include <sio/read_batched.hpp>
 #include <sio/sequence/reduce.hpp>
@@ -7,26 +25,6 @@
 #include <sio/memory_pool.hpp>
 #include <sio/mutable_buffer.hpp>
 #include <sio/with_env.hpp>
-
-#include <exec/when_any.hpp>
-
-#include <cassert>
-#include <chrono>
-#include <iostream>
-#include <numeric>
-#include <memory>
-#include <random>
-#include <ranges>
-#include <string>
-#include <thread>
-#include <latch>
-#include <new>
-#include <memory_resource>
-
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/unistd.h>
-#include <sys/ioctl.h>
 
 #ifdef __cpp_lib_hardware_interference_size
 #if __cpp_lib_hardware_interference_size >= 201703
@@ -39,7 +37,6 @@ inline constexpr std::size_t hardware_destructive_interference_size = 2 * sizeof
 inline constexpr std::size_t hardware_destructive_interference_size = 2 * sizeof(std::max_align_t);
 #endif
 
-#include <getopt.h>
 
 struct monotonic_buffer_resource : sio::memory_resource {
   monotonic_buffer_resource(void* buffer, std::size_t size) noexcept
@@ -189,7 +186,7 @@ struct program_options {
         {         0,                 0, 0,   0}
       };
 
-      const char* short_options = "b:s:m:hr:t:";
+      const char* short_options = "bs:m:hr:t:";
 
       c = getopt_long(argc, argv, short_options, long_options, &option_index);
       if (c == -1)
@@ -361,9 +358,8 @@ auto read_with_counter(
   ::off_t offset,
   counters& stats,
   const int thread_id) {
-  auto buffered_read_some =
-    sio::buffered_sequence<sio::io_uring::read_factory, sio::mutable_buffer>(
-      sio::io_uring::read_factory{stream.context_, stream.fd_}, buffer, offset);
+  auto buffered_read_some = sio::buffered_sequence(
+    sio::io_uring::read_factory{stream.context_, stream.fd_}, buffer, offset);
   auto with_increase_counters = sio::then_each(
     std::move(buffered_read_some), [&stats, thread_id](std::size_t n_bytes) noexcept {
       stats.notify_read(n_bytes, thread_id);

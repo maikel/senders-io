@@ -18,289 +18,224 @@
 #include "../buffer_algorithms.hpp"
 #include "../mutable_buffer_span.hpp"
 #include "../const_buffer_span.hpp"
-
 #include "../concepts.hpp"
 #include "../sequence/sequence_concepts.hpp"
+#include "sio/mutable_buffer.hpp"
 
-#include <exec/linux/io_uring_context.hpp>
+#include <tuple>
 
-#include <span>
-#include <variant>
+#include <exec/sequence_senders.hpp>
+#include <exec/__detail/__basic_sequence.hpp>
 
 namespace sio {
-  mutable_buffer_span to_buffer_sequence(const mutable_buffer&);
-  const_buffer_span to_buffer_sequence(const const_buffer&);
-  mutable_buffer_span to_buffer_sequence(const std::span<mutable_buffer>&);
-  const_buffer_span to_buffer_sequence(const std::span<const_buffer>&);
+  namespace buffered_sequence_ {
 
-  template <class Buffer>
-  using buffer_sequence_of_t = decltype(to_buffer_sequence(std::declval<Buffer>()));
+    template <class SenderFactory, class Buffer>
+    struct sequence_op_base {
+      SenderFactory factory_;
+      Buffer buffer_;
+      ::off_t offset_;
 
-  template <class Buffer>
-  class buffer_span;
-
-  template <class Buffer>
-    requires std::same_as<Buffer, mutable_buffer> || std::same_as<Buffer, const_buffer>
-  class buffer_span<Buffer> {
-    Buffer buffer_{};
-    ::off_t offset_{-1};
-
-   public:
-    buffer_span() = default;
-
-    explicit buffer_span(Buffer buffer, ::off_t offset = -1) noexcept
-      : buffer_{buffer}
-      , offset_{offset} {
-    }
-
-    buffer_sequence_of_t<Buffer> data() const noexcept {
-      if (buffer_.size() == 0) {
-        return buffer_sequence_of_t<Buffer>{};
+      auto make_sender() noexcept -> call_result_t<SenderFactory&, Buffer, ::off_t> {
+        return this->factory_(this->buffer_, offset_);
       }
-      return buffer_sequence_of_t<Buffer>{&buffer_, 1};
-    }
 
-    ::off_t offset() const noexcept {
-      return offset_;
-    }
-
-    void advance(std::size_t n) noexcept {
-      if (n < buffer_.size()) {
+      void advance(std::size_t n) noexcept {
         buffer_ += n;
-      } else {
-        buffer_ = Buffer{};
-      }
-      if (offset_ != -1) {
-        offset_ += n;
-      }
-    }
-  };
-
-  template <class Buffer>
-    requires std::same_as<Buffer, mutable_buffer> || std::same_as<Buffer, const_buffer>
-  class buffer_span<std::span<Buffer>> {
-    std::span<Buffer> buffers_{};
-    ::off_t offset_{-1};
-
-   public:
-    buffer_span() = default;
-
-    explicit buffer_span(std::span<Buffer> buffers, ::off_t offset = -1) noexcept
-      : buffers_{buffers}
-      , offset_{offset} {
-    }
-
-    buffer_sequence_of_t<Buffer> data() const noexcept {
-      return buffer_sequence_of_t<Buffer>{buffers_};
-    }
-
-    ::off_t offset() const noexcept {
-      return offset_;
-    }
-
-    void advance(std::size_t n) noexcept {
-      while (buffers_.size() > 0 && n > 0) {
-        Buffer& buffer = buffers_.front();
-        if (n < buffer.size()) {
-          buffer += n;
-          break;
-        } else {
-          n -= buffer.size();
-          buffers_ = buffers_.subspan(1);
+        if (offset_ != -1) {
+          offset_ += n;
         }
       }
-      if (offset_ != -1) {
-        offset_ += n;
+    };
+
+    template <class SenderFactory, class Buffer, class ItemReceiver>
+    struct item_operation_base {
+      sequence_op_base<SenderFactory, Buffer>* sequence_op_;
+      ItemReceiver item_receiver_;
+    };
+
+    template <class SenderFactory, class Buffer, class ItemReceiver>
+    struct item_receiver {
+      using receiver_concept = stdexec::receiver_t;
+      item_operation_base<SenderFactory, Buffer, ItemReceiver>* op_;
+
+      void set_value(std::size_t n) && noexcept {
+        op_->sequence_op_->advance(n);
+        stdexec::set_value(static_cast<ItemReceiver&&>(op_->item_receiver_), n);
       }
-    }
-  };
 
-  template <class SenderFactory, class Buffer>
-  struct buffered_sequence_op_base {
-    SenderFactory sender_factory_;
-    buffer_span<Buffer> buffer_;
+      void set_error(std::error_code ec) && noexcept {
+        stdexec::set_error(
+          static_cast<ItemReceiver&&>(op_->item_receiver_), static_cast<std::error_code&&>(ec));
+      }
 
-    call_result_t<SenderFactory&, buffer_sequence_of_t<Buffer>, ::off_t> make_sender() noexcept {
-      return sender_factory_(buffer_.data(), buffer_.offset());
-    }
-  };
+      void set_stopped() && noexcept {
+        stdexec::set_stopped(static_cast<ItemReceiver&&>(op_->item_receiver_));
+      }
 
-  template <class SenderFactory, class Buffer, class ItemReceiver>
-  struct buffered_item_op_base {
-    buffered_sequence_op_base<SenderFactory, Buffer>* parent_op_;
-    ItemReceiver item_receiver_;
-  };
+      auto get_env() const noexcept -> stdexec::env_of_t<ItemReceiver> {
+        return stdexec::get_env(op_->item_receiver_);
+      }
+    };
 
-  template <class SenderFactory, class Buffer, class ItemReceiver>
-  struct buffered_item_receiver {
-    buffered_item_op_base<SenderFactory, Buffer, ItemReceiver>* op_;
+    template <class SenderFactory, class Buffer, class ItemReceiver>
+    struct item_operation : item_operation_base<SenderFactory, Buffer, ItemReceiver> {
+      using base_type = item_operation_base<SenderFactory, Buffer, ItemReceiver>;
+      using Sender = call_result_t<SenderFactory&, Buffer, ::off_t>;
+      using item_receiver_t = item_receiver<SenderFactory, Buffer, ItemReceiver>;
 
-    stdexec::env_of_t<ItemReceiver> get_env(stdexec::get_env_t) const noexcept {
-      return stdexec::get_env(op_->item_receiver_);
-    }
+      stdexec::connect_result_t<Sender, item_receiver_t> op_;
 
-    void set_value(stdexec::set_value_t, std::size_t n) && noexcept {
-      op_->parent_op_->buffer_.advance(n);
-      stdexec::set_value(static_cast<ItemReceiver&&>(op_->item_receiver_), std::move(n));
-    }
+      item_operation(
+        sequence_op_base<SenderFactory, Buffer>* sequence_op,
+        ItemReceiver item_receiver)
+        : base_type{sequence_op, static_cast<ItemReceiver&&>(item_receiver)}
+        , op_{stdexec::connect(this->sequence_op_->make_sender(), item_receiver_t{this})} {
+      }
 
-    void set_error(stdexec::set_error_t, std::error_code ec) && noexcept {
-      stdexec::set_error(static_cast<ItemReceiver&&>(op_->item_receiver_), std::move(ec));
-    }
+      void start() & noexcept {
+        stdexec::start(op_);
+      }
+    };
 
-    void set_stopped(stdexec::set_stopped_t) && noexcept {
-      stdexec::set_stopped(static_cast<ItemReceiver&&>(op_->item_receiver_));
-    }
-  };
+    template <class SenderFactory, class Buffer>
+    struct item_sender {
+      using sender_concept = stdexec::sender_t;
+      using Sender = call_result_t<SenderFactory&, Buffer, ::off_t>;
+      using completion_signatures = stdexec::completion_signatures_of_t<Sender>;
 
-  template <class SenderFactory, class Buffer, class ItemReceiver>
-  struct buffered_item_op : buffered_item_op_base<SenderFactory, Buffer, ItemReceiver> {
-    using Sender = call_result_t<SenderFactory&, buffer_sequence_of_t<Buffer>, ::off_t>;
-    stdexec::connect_result_t<Sender, buffered_item_receiver<SenderFactory, Buffer, ItemReceiver>>
-      op_;
+      sequence_op_base<SenderFactory, Buffer>* sequence_op_;
 
-    buffered_item_op(
-      buffered_sequence_op_base<SenderFactory, Buffer>* parent_op,
-      ItemReceiver item_receiver)
-      : buffered_item_op_base<
-        SenderFactory,
-        Buffer,
-        ItemReceiver>{parent_op, static_cast<ItemReceiver&&>(item_receiver)}
-      , op_{stdexec::connect(
-          this->parent_op_->make_sender(),
-          buffered_item_receiver<SenderFactory, Buffer, ItemReceiver>{this})} {
-    }
+      template <stdexec::receiver ItemReceiver>
+        requires stdexec::sender_to<Sender, item_receiver<SenderFactory, Buffer, ItemReceiver>>
+      auto connect(ItemReceiver item_receiver) noexcept
+        -> item_operation<SenderFactory, Buffer, ItemReceiver> {
+        return {sequence_op_, static_cast<ItemReceiver&&>(item_receiver)};
+      }
+    };
 
-    void start(stdexec::start_t) noexcept {
-      stdexec::start(op_);
-    }
-  };
+    template <class SenderFactory, class Buffer, class Receiver>
+    struct next_receiver;
 
-  template <class SenderFactory, class Buffer>
-  struct buffered_item {
-    using is_sender = void;
-    using Sender = call_result_t<SenderFactory&, buffer_sequence_of_t<Buffer>, ::off_t>;
+    template <class SenderFactory, class Buffer, class Receiver>
+    struct sequence_op : sequence_op_base<SenderFactory, Buffer> {
+      using base_type = sequence_op_base<SenderFactory, Buffer>;
 
-    using completion_signatures = stdexec::completion_signatures_of_t<Sender>;
+      using item_sender_t = item_sender<SenderFactory, Buffer>;
+      using next_sender_t = exec::next_sender_of_t<Receiver, item_sender_t>;
+      using next_receiver_t = next_receiver<SenderFactory, Buffer, Receiver>;
+      using next_op_t = stdexec::connect_result_t< next_sender_t, next_receiver_t>;
 
-    buffered_sequence_op_base<SenderFactory, Buffer>* parent_op_;
+      std::optional<next_op_t> next_op_;
+      Receiver receiver_;
 
-    template <stdexec::receiver ItemReceiver>
-      requires stdexec::
-        sender_to<Sender, buffered_item_receiver<SenderFactory, Buffer, ItemReceiver>>
-      buffered_item_op<SenderFactory, Buffer, ItemReceiver>
-      connect(stdexec::connect_t, ItemReceiver item_receiver) const noexcept {
-      return buffered_item_op<SenderFactory, Buffer, ItemReceiver>{
-        parent_op_, static_cast<ItemReceiver&&>(item_receiver)};
-    }
-  };
+      sequence_op(SenderFactory factory, Buffer buffer, ::off_t offset, Receiver receiver)
+        : base_type(static_cast<SenderFactory&&>(factory), buffer, offset)
+        , receiver_(static_cast<Receiver&&>(receiver)) {
+        connect_next();
+      }
 
-  template <class SenderFactory, class Buffer, class Receiver>
-  struct buffered_sequence_op;
+      decltype(auto) connect_next() {
+        return next_op_.emplace(stdexec::__conv{[this] {
+          next_sender_t next = exec::set_next(receiver_, item_sender_t{this});
+          return stdexec::connect(static_cast<next_sender_t&&>(next), next_receiver_t{this});
+        }});
+      }
 
-  template <class SenderFactory, class Buffer, class Receiver>
-  struct buffered_next_receiver {
-    using is_receiver = void;
+      void start() & noexcept {
+        stdexec::start(*next_op_);
+      }
+    };
 
-    buffered_sequence_op<SenderFactory, Buffer, Receiver>* op_;
+    template <class SenderFactory, class Buffer, class Receiver>
+    struct next_receiver {
+      using receiver_concept = stdexec::receiver_t;
 
-    void set_value(stdexec::set_value_t) && noexcept;
+      sequence_op<SenderFactory, Buffer, Receiver>* sequence_op_;
 
-    void set_stopped(stdexec::set_stopped_t) && noexcept;
+      void set_value() && noexcept {
+        if (sequence_op_->buffer_.size() == 0) {
+          stdexec::set_value(static_cast<Receiver&&>(sequence_op_->receiver_));
+          return;
+        }
+        try {
+          stdexec::start(sequence_op_->connect_next());
+        } catch (...) {
+          stdexec::set_error(
+            static_cast<Receiver&&>(sequence_op_->receiver_), std::current_exception());
+        }
+      }
 
-    stdexec::env_of_t<Receiver> get_env(stdexec::get_env_t) const noexcept;
-  };
+      void set_stopped() && noexcept {
+        exec::set_value_unless_stopped(static_cast<Receiver&&>(sequence_op_->receiver_));
+      }
 
-  template <class SenderFactory, class Buffer, class Receiver>
-  struct buffered_sequence_op : buffered_sequence_op_base<SenderFactory, Buffer> {
-    Receiver receiver_;
-    std::optional<stdexec::connect_result_t<
-      exec::next_sender_of_t<Receiver, buffered_item<SenderFactory, Buffer>>,
-      buffered_next_receiver<SenderFactory, Buffer, Receiver>>>
-      next_op_;
+      auto get_env() const noexcept -> stdexec::env_of_t<Receiver> {
+        return stdexec::get_env(sequence_op_->receiver_);
+      }
+    };
 
-    explicit buffered_sequence_op(
-      Receiver receiver,
-      SenderFactory sndr,
-      Buffer buffer,
-      ::off_t offset)
-      : buffered_sequence_op_base<
-        SenderFactory,
-        Buffer>{std::move(sndr), buffer_span<Buffer>{buffer, offset}}
-      , receiver_(std::move(receiver)) {
-      connect_next();
-    }
+    template <class Receiver>
+    struct subscribe_fn {
+      Receiver& rcvr_;
 
-    decltype(auto) connect_next() {
-      return next_op_.emplace(stdexec::__conv{[this] {
-        return stdexec::connect(
-          exec::set_next(receiver_, buffered_item<SenderFactory, Buffer>{this}),
-          buffered_next_receiver<SenderFactory, Buffer, Receiver>{this});
-      }});
-    }
+      template <class SenderFactory, class Buffer>
+        requires stdexec::sender_to<
+                   exec::next_sender_of_t<Receiver, item_sender<SenderFactory, Buffer>>,
+                   next_receiver<SenderFactory, Buffer, Receiver>>
+      auto operator()(stdexec::__ignore, std::tuple<SenderFactory, Buffer, ::off_t>&& data) noexcept
+        -> sequence_op< SenderFactory, Buffer, Receiver> {
+        return {
+          static_cast<SenderFactory&&>(std::get<0>(data)),
+          static_cast<Buffer&&>(std::get<1>(data)),
+          std::get<2>(data),
+          static_cast<Receiver&&>(rcvr_)};
+      }
+    };
 
-    void start(stdexec::start_t) noexcept {
-      stdexec::start(*next_op_);
-    }
-  };
 
-  template <class SenderFactory, class Buffer>
-  struct buffered_sequence {
-    using is_sender = exec::sequence_tag;
+    template <class Buffer>
+    concept single_buffer = decays_to<mutable_buffer, Buffer> || decays_to<const_buffer, Buffer>;
 
-    SenderFactory sender_;
-    Buffer buffer_;
-    ::off_t offset_;
+    struct buffered_sequence_t {
+      template <class SenderFactory, class Buffer>
+        requires single_buffer<Buffer>
+      auto operator()(SenderFactory factory, Buffer buffer, ::off_t offset = -1) const
+        -> stdexec::__well_formed_sender auto {
+        return exec::make_sequence_expr<buffered_sequence_t>(
+          std::tuple{static_cast<SenderFactory&&>(factory), static_cast<Buffer&&>(buffer), offset});
+      }
 
-    explicit buffered_sequence(SenderFactory sndr, Buffer buffer, ::off_t offset = -1) noexcept
-      : sender_{std::move(sndr)}
-      , buffer_{buffer}
-      , offset_{offset} {
-    }
+      template <class Self, class Receiver>
+      static auto subscribe(Self&& self, Receiver rcvr) noexcept(
+        stdexec::__nothrow_callable<stdexec::__sexpr_apply_t, Self, subscribe_fn<Receiver>>)
+        -> stdexec::__call_result_t<stdexec::__sexpr_apply_t, Self, subscribe_fn<Receiver>> {
+        return stdexec::__sexpr_apply(static_cast<Self&&>(self), subscribe_fn< Receiver>{rcvr});
+      }
 
-    using completion_signatures = stdexec::completion_signatures<
-      stdexec::set_value_t(),
-      stdexec::set_error_t(std::exception_ptr),
-      stdexec::set_stopped_t()>;
+      template <stdexec::sender_expr_for<buffered_sequence_t> Self, class Env>
+      static auto get_completion_signatures(Self&&, Env&&) noexcept
+        -> stdexec::completion_signatures<
+          stdexec::set_value_t(),
+          stdexec::set_error_t(std::exception_ptr),
+          stdexec::set_stopped_t()> {
+        return {};
+      }
 
-    using item_types = exec::item_types<buffered_item<SenderFactory, Buffer>>;
+      template <stdexec::sender_expr_for<buffered_sequence_t> Self, class Env>
+      static auto get_item_types(Self&&, Env&&) noexcept
+        -> exec::item_types<item_sender<
+          std::tuple_element_t<0, stdexec::__data_of<Self>>,
+          std::tuple_element_t<1, stdexec::__data_of<Self> >>> {
+        return {};
+      }
 
-    template <exec::sequence_receiver_of<item_types> Receiver>
-    buffered_sequence_op<SenderFactory, Buffer, Receiver>
-      subscribe(exec::subscribe_t, Receiver rcvr) const
-      noexcept(nothrow_move_constructible<Receiver>) {
-      return buffered_sequence_op<SenderFactory, Buffer, Receiver>{
-        static_cast<Receiver&&>(rcvr), sender_, buffer_, offset_};
-    }
-
-    auto get_sequence_env(exec::get_sequence_env_t) const noexcept {
-      return exec::make_env(exec::with(exec::parallelism, exec::lock_step));
-    }
-  };
-
-  template <class SenderFactory, class Buffer, class Receiver>
-  void buffered_next_receiver<SenderFactory, Buffer, Receiver>::set_value(
-    stdexec::set_value_t) && noexcept {
-    if (op_->buffer_.data().empty()) {
-      stdexec::set_value(static_cast<Receiver&&>(op_->receiver_));
-      return;
-    }
-    try {
-      stdexec::start(op_->connect_next());
-    } catch (...) {
-      stdexec::set_error(static_cast<Receiver&&>(op_->receiver_), std::current_exception());
-    }
+      auto get_sequence_env() const noexcept {
+        return exec::make_env(exec::with(exec::parallelism, exec::lock_step));
+      }
+    };
   }
 
-  template <class SenderFactory, class Buffer, class Receiver>
-  void buffered_next_receiver<SenderFactory, Buffer, Receiver>::set_stopped(
-    stdexec::set_stopped_t) && noexcept {
-    exec::set_value_unless_stopped(static_cast<Receiver&&>(op_->receiver_));
-  }
-
-  template <class SenderFactory, class Buffer, class Receiver>
-  stdexec::env_of_t<Receiver> buffered_next_receiver<SenderFactory, Buffer, Receiver>::get_env(
-    stdexec::get_env_t) const noexcept {
-    return stdexec::get_env(op_->receiver_);
-  }
+  using buffered_sequence_::buffered_sequence_t;
+  inline constexpr buffered_sequence_t buffered_sequence{};
 }

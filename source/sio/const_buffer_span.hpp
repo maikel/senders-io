@@ -15,9 +15,9 @@
  */
 #pragma once
 
-#include "./const_buffer.hpp"
-
 #include <span>
+
+#include "./const_buffer.hpp"
 
 namespace sio {
   class const_buffer_span;

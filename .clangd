@@ -1,0 +1,4 @@
+# https://clangd.llvm.org/config
+
+CompileFlags:
+  Remove: -fconcepts-diagnostics-depth=10

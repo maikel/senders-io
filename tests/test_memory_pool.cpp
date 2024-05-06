@@ -13,6 +13,20 @@ TEST_CASE("memory_pool - empty and allocate", "[memory_pool]") {
   stdexec::sync_wait(alloc);
 }
 
+TEST_CASE("memory_pool_allocator - new and delete", "[memory_pool]") {
+  sio::memory_pool pool{};
+  sio::memory_pool_allocator<int> alloc{&pool};
+
+  auto s = alloc.async_new(123) //
+         | stdexec::let_value([&alloc](int* n) noexcept {
+             CHECK(n);
+             REQUIRE(*n == 123);
+             return alloc.async_delete(n);
+           });
+
+  stdexec::sync_wait(s);
+}
+
 // TEST_CASE("memory_pool - bounded memory pool", "[memory_pool]") {
 //   char buffer[1024] = {};
 //   auto never_alloc = std::pmr::null_memory_resource();

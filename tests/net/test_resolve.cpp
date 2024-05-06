@@ -13,15 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include <catch2/catch.hpp>
+#include <exec/sequence_senders.hpp>
+
 #include "sio/ip/resolve.hpp"
 #include "sio/ip/tcp.hpp"
 #include "sio/sequence/first.hpp"
 
-#include <catch2/catch.hpp>
-
 TEST_CASE("async::resolve - Resolve ipv4 localhost", "[net][resolve][first]") {
   auto sndr = sio::first(sio::async::resolve(sio::ip::tcp::v4(), "localhost", "http"));
-  auto result = stdexec::sync_wait(sndr);
+  auto result = stdexec::sync_wait(std::move(sndr));
   CHECK(result);
   auto [response] = result.value();
   CHECK(response.endpoint().address().is_v4());
