@@ -338,14 +338,6 @@ namespace sio::async {
     stdexec::__msingle_or<void>,
     stdexec::__q<stdexec::__msingle>>;
 
-  // template <class _Sequence, class _Env>
-  // using single_item_value_t = stdexec::__gather_signal<
-  //   stdexec::set_value_t,
-  //   exec::item_completion_signatures_of_t<_Sequence, _Env>,
-  //   stdexec::__msingle_or<void>,
-  //   stdexec::__q<stdexec::__msingle>>;
-
-
   template <resource Resource, class Env = stdexec::empty_env>
   using resource_token_of_t = decay_t<single_item_value_t<call_result_t<use_t, Resource&>, Env>>;
 
