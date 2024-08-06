@@ -503,10 +503,6 @@ namespace sio::io_uring {
       return write_sender_single(*this->context_, data, this->fd_);
     }
 
-    // auto write(std::span<const_buffer> data) const noexcept {
-    //   return reduce(buffered_sequence(write_factory{this->context_, this->fd_}, data), 0ull);
-    // }
-
     auto write(const_buffer_type data) const noexcept {
       return reduce(buffered_sequence(write_factory{this->context_, this->fd_}, data), 0ull);
     }
@@ -518,10 +514,6 @@ namespace sio::io_uring {
     read_sender_single read_some(buffer_type buffer) const noexcept {
       return read_sender_single(*this->context_, buffer, this->fd_);
     }
-
-    // auto read(std::span<mutable_buffer> buffer) const noexcept {
-    //   return reduce(buffered_sequence(read_factory{this->context_, this->fd_}, buffer), 0ull);
-    // }
 
     auto read(buffer_type buffer) const noexcept {
       return reduce(buffered_sequence(read_factory{this->context_, this->fd_}, buffer), 0ull);
@@ -558,19 +550,10 @@ namespace sio::io_uring {
       return read_sender_single(*this->context_, buffer, this->fd_, offset);
     }
 
-    // auto write(std::span<const_buffer> data, extent_type offset) const noexcept {
-    //   return reduce(
-    //     buffered_sequence(write_factory{this->context_, this->fd_}, data, offset), 0ull);
-    // }
-
     auto write(const_buffer_type data, extent_type offset) const noexcept {
       return reduce(
         buffered_sequence(write_factory{this->context_, this->fd_}, data, offset), 0ull);
     }
-
-    // auto read(std::span<mutable_buffer> data, extent_type offset) const noexcept {
-    //   return reduce(buffered_sequence(read_factory{this->context_, this->fd_}, data, offset), 0ull);
-    // }
 
     auto read(buffer_type data, extent_type offset) const noexcept {
       return reduce(buffered_sequence(read_factory{this->context_, this->fd_}, data, offset), 0ull);
