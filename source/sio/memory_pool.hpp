@@ -187,19 +187,20 @@ namespace sio {
       return {static_cast<Receiver&&>(receiver), pool_, pointer_, destroy_};
     }
 
+    struct rcvr {
+      using receiver_concept = stdexec::receiver_t;
+
+      auto get_env() const noexcept -> stdexec::empty_env {
+        return {};
+      }
+
+      void set_value() const noexcept {
+      }
+    };
+
     friend void tag_invoke(stdexec::sync_wait_t, deallocate_sender self) noexcept {
-      struct rcvr {
-        using receiver_concept = stdexec::receiver_t;
-
-        auto get_env() const noexcept -> stdexec::empty_env {
-          return {};
-        }
-
-        void set_value() const noexcept {
-        }
-      };
-
-      auto op = stdexec::connect(self, rcvr{});
+      // auto op = stdexec::connect(self, rcvr{});
+      auto op = stdexec::connect(std::move(self), rcvr{});
       stdexec::start(op);
     }
   };
