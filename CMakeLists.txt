@@ -10,7 +10,8 @@ if (DOXYGEN_FOUND)
   set(DOXYGEN_GENERATE_MAN YES)
   doxygen_add_docs(
       doxygen
-      ${CMAKE_CURRENT_SOURCE_DIR}/source)
+      ${CMAKE_CURRENT_SOURCE_DIR}/source
+  )
 endif()
 set(CMAKE_EXPORT_COMPILE_COMMANDS true)
 
@@ -21,8 +22,7 @@ add_library(sio
   source/sio/const_buffer_span.cpp
   source/sio/mutable_buffer_span.cpp
   source/sio/io_uring/file_handle.cpp
-  source/sio/memory_pool.cpp
-)
+  source/sio/memory_pool.cpp)
 add_library(sio::sio ALIAS sio)
 target_include_directories(sio
   PUBLIC
@@ -77,8 +77,7 @@ target_sources(sio PUBLIC
     source/sio/net_concepts.hpp
     source/sio/read_batched.hpp
     source/sio/tap.hpp
-    source/sio/with_env.hpp
-  )
+    source/sio/with_env.hpp)
 target_link_libraries(sio PUBLIC STDEXEC::stdexec)
 target_compile_features(sio PUBLIC cxx_std_20)
 

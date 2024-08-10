@@ -1,3 +1,14 @@
+#include <sio/io_uring/file_handle.hpp>
+#include <sio/read_batched.hpp>
+#include <sio/sequence/reduce.hpp>
+#include <sio/sequence/iterate.hpp>
+#include <sio/sequence/then_each.hpp>
+#include <sio/sequence/ignore_all.hpp>
+#include <sio/memory_pool.hpp>
+#include <sio/mutable_buffer.hpp>
+#include <sio/with_env.hpp>
+#include <exec/when_any.hpp>
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/unistd.h>
@@ -13,18 +24,6 @@
 #include <string>
 #include <thread>
 #include <new>
-
-#include <exec/when_any.hpp>
-
-#include <sio/io_uring/file_handle.hpp>
-#include <sio/read_batched.hpp>
-#include <sio/sequence/reduce.hpp>
-#include <sio/sequence/iterate.hpp>
-#include <sio/sequence/then_each.hpp>
-#include <sio/sequence/ignore_all.hpp>
-#include <sio/memory_pool.hpp>
-#include <sio/mutable_buffer.hpp>
-#include <sio/with_env.hpp>
 
 #ifdef __cpp_lib_hardware_interference_size
 #if __cpp_lib_hardware_interference_size >= 201703

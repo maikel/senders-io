@@ -9,6 +9,7 @@ endif ()
 
 add_executable(test_sio
   test_const_buffer_subspan.cpp
+  test_mutable_buffer_span.cpp
   sequence/test_first.cpp
   sequence/test_last.cpp
   sequence/test_fork.cpp

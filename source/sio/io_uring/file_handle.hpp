@@ -14,6 +14,14 @@
  * limitations under the License.
  */
 #pragma once
+#include "../assert.hpp"
+#include "../io_concepts.hpp"
+#include "../sequence/buffered_sequence.hpp"
+#include "../sequence/reduce.hpp"
+#include "../const_buffer_span.hpp"
+#include "../mutable_buffer_span.hpp"
+#include "../concepts.hpp"
+#include "sio/mutable_buffer.hpp"
 
 #include <sys/socket.h>
 #include <unistd.h>
@@ -23,14 +31,6 @@
 #include <filesystem>
 
 #include <exec/linux/io_uring_context.hpp>
-
-#include "../assert.hpp"
-#include "../io_concepts.hpp"
-#include "../sequence/buffered_sequence.hpp"
-#include "../sequence/reduce.hpp"
-#include "../const_buffer_span.hpp"
-#include "../mutable_buffer_span.hpp"
-#include "../concepts.hpp"
 
 namespace sio::io_uring {
   struct env {
@@ -230,11 +230,11 @@ namespace sio::io_uring {
   };
 
   struct read_submission_single {
-    mutable_buffer buffers_;
+    mutable_buffer buffer_;
     int fd_;
     ::off_t offset_;
 
-    read_submission_single(mutable_buffer buffers, int fd, ::off_t offset) noexcept;
+    read_submission_single(mutable_buffer buffer, int fd, ::off_t offset) noexcept;
 
     ~read_submission_single();
 
@@ -503,20 +503,29 @@ namespace sio::io_uring {
       return write_sender_single(*this->context_, data, this->fd_);
     }
 
+    auto write(std::span<const_buffer> data) const noexcept {
+      return reduce(buffered_sequence(write_factory{this->context_, this->fd_}, data), 0ull);
+    }
+
     auto write(const_buffer_type data) const noexcept {
       return reduce(buffered_sequence(write_factory{this->context_, this->fd_}, data), 0ull);
     }
 
-    read_sender read_some(buffers_type buffer) const noexcept {
-      return read_sender(*this->context_, buffer, this->fd_);
+    read_sender read_some(buffers_type buffers) const noexcept {
+      return read_sender(*this->context_, buffers, this->fd_);
     }
 
     read_sender_single read_some(buffer_type buffer) const noexcept {
       return read_sender_single(*this->context_, buffer, this->fd_);
     }
 
+    auto read(std::span<mutable_buffer> buffers) const noexcept {
+      return reduce(buffered_sequence(read_factory{this->context_, this->fd_}, buffers), 0ull);
+    }
+
     auto read(buffer_type buffer) const noexcept {
-      return reduce(buffered_sequence(read_factory{this->context_, this->fd_}, buffer), 0ull);
+      auto buffered_sndr = buffered_sequence(read_factory{this->context_, this->fd_}, buffer);
+      return reduce(std::move(buffered_sndr), 0ull);
     }
   };
 

@@ -44,6 +44,10 @@ namespace sio {
       return size_;
     }
 
+    bool empty() const noexcept {
+      return size_ == 0;
+    }
+
     mutable_buffer& operator+=(std::size_t n) noexcept {
       if (n >= size_) {
         data_ += size_;

@@ -1,11 +1,11 @@
-Set(FETCHCONTENT_QUIET FALSE)
-
 include(FetchContent)
 FetchContent_Declare(
   stdexec
   GIT_REPOSITORY https://github.com/Runner-2019/stdexec.git
   GIT_TAG update-with-senders-io 
-  GIT_PROGRESS TRUE
 )
+
+set(STDEXEC_BUILD_EXAMPLES OFF CACHE BOOL "close stdexec examples")
+message(STATUS "Downloading stdexec......")
 FetchContent_MakeAvailable(stdexec)
 

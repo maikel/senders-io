@@ -21,7 +21,7 @@ TEST_CASE("tap - with senders") {
     just_invoke([&] { closed++; }));
   using tap_t = decltype(tap);
   STATIC_REQUIRE(stdexec::sender<tap_t>);
-  STATIC_REQUIRE(exec::sequence_sender<tap_t>);
+  STATIC_REQUIRE(exec::sequence_sender<tap_t, stdexec::empty_env>);
   CHECK(stdexec::sync_wait(
     sio::then_each(
       std::move(tap),
