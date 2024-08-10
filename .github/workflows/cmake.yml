@@ -18,34 +18,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
-      with:
-        repository: NVIDIA/stdexec
-        ref: 9428f3570b7778a3b60659ea5dfec0d2447e7ca7
-        path: stdexec
-
-    - name: Configure stdexec
-      run: cmake -B ${{github.workspace}}/stdexec-build -S ${{github.workspace}}/stdexec -DCMAKE_INSTALL_PREFIX=${{github.workspace}}/stdexec-install
-
-    - name: Install stdexec
-      run: cmake --install ${{github.workspace}}/stdexec-build
-
-    - uses: actions/checkout@v3
-      with:
-        repository: catchorg/Catch2
-        path: catch2
-        ref: v2.13.6
-
-    - name: Configure Catch2
-      run: cmake -B ${{github.workspace}}/catch2-build -S ${{github.workspace}}/catch2 -DCMAKE_INSTALL_PREFIX=${{github.workspace}}/catch2-install -DBUILD_TESTING=OFF
-
-    - name: Build Catch2
-      run: cmake --build ${{github.workspace}}/catch2-build --parallel 4
-
-    - name: Install Catch2
-      run: cmake --install ${{github.workspace}}/catch2-build
-
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         path: sio
 

@@ -7,8 +7,6 @@ elseif (NOT TARGET sio::sio)
   message(FATAL_ERROR "sio::sio target is not defined. Please use add_subdirectory to add sio to your project")
 endif ()
 
-find_package(Catch2 REQUIRED)
-
 add_executable(test_sio
   test_main.cpp
   test_const_buffer_subspan.cpp
