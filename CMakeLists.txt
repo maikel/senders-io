@@ -10,11 +10,12 @@ if (DOXYGEN_FOUND)
   set(DOXYGEN_GENERATE_MAN YES)
   doxygen_add_docs(
       doxygen
-      ${CMAKE_CURRENT_SOURCE_DIR}/source
-  )
+      ${CMAKE_CURRENT_SOURCE_DIR}/source)
 endif()
 set(CMAKE_EXPORT_COMPILE_COMMANDS true)
-find_package(stdexec REQUIRED)
+
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(FetchStdexec)
 
 add_library(sio
   source/sio/const_buffer_span.cpp
@@ -83,6 +84,7 @@ target_compile_features(sio PUBLIC cxx_std_20)
 
 option(BUILD_TESTING "Build tests" ON)
 if (BUILD_TESTING)
+  include(FetchCatch2)
   add_subdirectory(tests)
 endif()
 
