@@ -17,7 +17,6 @@
 
 #define STDEXEC_ENABLE_EXTRA_TYPE_CHECKING() 0
 
-#include <stdexec/__detail/__domain.hpp>
 #include <stdexec/execution.hpp>
 
 namespace sio {

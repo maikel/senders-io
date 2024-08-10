@@ -80,6 +80,28 @@ TEST_CASE("buffered_sequence - with read_factory and single buffer", "[sio][buff
   CHECK(storage == content);
 }
 
+TEST_CASE(
+  "buffered_sequence - with read_factory and multiple buffers",
+  "[sio][buffered_sequence]") {
+  auto ctx = exec::io_uring_context{};
+  auto fd = create_memfd("with_read_factory");
+
+  constexpr auto content = std::string_view{"hello world"};
+  write_to_file(fd, content);
+  auto factory = sio::io_uring::read_factory{&ctx, fd};
+
+  // write to storage
+  auto storage1 = std::string(6, '0');
+  auto storage2 = std::string(5, '0');
+  auto array = std::array<sio::mutable_buffer, 2>{sio::buffer(storage1), sio::buffer(storage2)};
+  auto buffers = std::span< sio::mutable_buffer>{array};
+  auto buffered_read_some = sio::buffered_sequence(factory, buffers, 0);
+  ::sync_wait(ctx, sio::ignore_all(std::move(buffered_read_some)));
+
+  CHECK(storage1 == "hello ");
+  CHECK(storage2 == "world");
+}
+
 TEST_CASE("buffered_sequence - with write_factory and single buffer", "[sio][buffered_sequence]") {
   auto ctx = exec::io_uring_context{};
   auto fd = create_memfd("with_write_factory");

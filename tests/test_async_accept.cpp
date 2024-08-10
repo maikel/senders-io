@@ -30,6 +30,7 @@
 #include "sio/ip/tcp.hpp"
 #include "sio/sequence/ignore_all.hpp"
 #include "sio/sequence/let_value_each.hpp"
+#include "stdexec/__detail/__env.hpp"
 
 using namespace sio;
 
@@ -45,7 +46,7 @@ TEST_CASE("async_accept concept", "[async_accept]") {
   io_uring::acceptor_handle acceptor{ctx, -1, ip::tcp::v4(), ep};
 
   auto sequence = sio::async::accept(acceptor);
-  STATIC_REQUIRE(exec::sequence_sender<decltype(sequence)>);
+  STATIC_REQUIRE(exec::sequence_sender<decltype(sequence), stdexec::empty_env>);
 
   auto op = exec::subscribe(std::move(sequence), any_sequence_receiver{});
   STATIC_REQUIRE(stdexec::operation_state<decltype(op)>);

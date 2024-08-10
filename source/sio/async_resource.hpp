@@ -99,14 +99,14 @@ namespace sio::async {
   using async_resource_::close;
 
   template <class Token>
-  using close_sender_of_t = decltype(sio::async::close(std::declval<Token>()));
+  using close_sender_of_t = decltype(close(std::declval<Token>()));
 
   template <class Resource>
-  using open_sender_of_t = decltype(sio::async::open(std::declval<Resource&>()));
+  using open_sender_of_t = decltype(open(std::declval<Resource&>()));
 
   template <class Resource, class Env>
   concept with_open = requires(Resource& resource) {
-    { sio::async::open(resource) } -> stdexec::__single_value_sender<Env>;
+    { open(resource) } -> stdexec::__single_value_sender<Env>;
   };
 
   template <class Resource, class Env>
@@ -121,7 +121,7 @@ namespace sio::async {
   template <class Resource, class Env = stdexec::empty_env>
   concept with_open_and_close =
     with_open<Resource, Env> && requires(Resource& resource, token_of_t<Resource, Env>& token) {
-      { sio::async::close(token) } -> sender_of_void;
+      { close(token) } -> sender_of_void;
     };
 
   namespace async_resource_ {
@@ -144,7 +144,7 @@ namespace sio::async {
       using receiver_concept = stdexec::receiver_t;
       operation_rcvr_base<Receiver>* op_;
 
-      stdexec::env_of_t<Receiver> get_env() const noexcept {
+      auto get_env() const noexcept -> stdexec::env_of_t<Receiver> {
         return stdexec::get_env(op_->rcvr_);
       }
 
@@ -207,7 +207,7 @@ namespace sio::async {
 
       operation_base<Token, Receiver>* op_;
 
-      stdexec::env_of_t<Receiver> get_env() const noexcept {
+      auto get_env() const noexcept -> stdexec::env_of_t<Receiver> {
         return stdexec::get_env(op_->rcvr_);
       }
 
@@ -216,8 +216,7 @@ namespace sio::async {
           Token& t = op_->token_.emplace(static_cast<Token&&>(token));
           auto& use_op = op_->use_op_.emplace(stdexec::__emplace_from{[&] {
             return stdexec::connect(
-              exec::finally(
-                exec::set_next(op_->rcvr_, use_sender<Token>{op_->token_}), sio::async::close(t)),
+              exec::finally(exec::set_next(op_->rcvr_, use_sender<Token>{op_->token_}), close(t)),
               final_receiver<Receiver>{op_});
           }});
           stdexec::start(use_op);
@@ -244,8 +243,7 @@ namespace sio::async {
 
       operation(Resource resource, Receiver rcvr)
         : operation_base<Token, Receiver>{static_cast<Receiver&&>(rcvr)}
-        , open_op_{
-            stdexec::connect(sio::async::open(resource), open_receiver<Token, Receiver>{this})} {
+        , open_op_{stdexec::connect(open(resource), open_receiver<Token, Receiver>{this})} {
       }
 
       void start() noexcept {

@@ -105,7 +105,7 @@ namespace exec {
     using namespace stdexec;
 
     struct get_sequence_env_t {
-      template <sequence_sender Sequence>
+      template <sequence_sender<empty_env> Sequence>
         requires tag_invocable<get_sequence_env_t, const Sequence&>
       constexpr tag_invoke_result_t< get_sequence_env_t, const Sequence&>
         operator()(const Sequence& seq) const noexcept {
@@ -113,18 +113,18 @@ namespace exec {
         return tag_invoke(*this, seq);
       }
 
-      template <sequence_sender Sequence>
+      template <sequence_sender<empty_env> Sequence>
         requires(!tag_invocable<get_sequence_env_t, const Sequence&>)
       constexpr empty_env operator()(const Sequence& seq) const noexcept {
         return {};
       }
 
       template <sender Sequence>
-        requires(!sequence_sender<Sequence>)
+        requires(!sequence_sender<Sequence, empty_env>)
       constexpr auto operator()(const Sequence& seq) const noexcept {
         return make_env(
-          with(cardinality_t{}, std::integral_constant<size_t, 1>{}),
-          with(parallelism_t{}, lock_step));
+          exec::with(cardinality_t{}, std::integral_constant<size_t, 1>{}),
+          exec::with(parallelism_t{}, lock_step));
       }
     };
   }

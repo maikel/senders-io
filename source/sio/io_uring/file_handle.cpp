@@ -56,10 +56,10 @@ namespace sio::io_uring {
   }
 
   read_submission_single::read_submission_single(
-    mutable_buffer buffers,
+    mutable_buffer buffer,
     int fd,
     ::off_t offset) noexcept
-    : buffers_{buffers}
+    : buffer_{buffer}
     , fd_{fd}
     , offset_{offset} {
   }
@@ -71,8 +71,8 @@ namespace sio::io_uring {
     sqe_.opcode = IORING_OP_READ;
     sqe_.fd = fd_;
     sqe_.off = offset_;
-    sqe_.addr = std::bit_cast<__u64>(buffers_.data());
-    sqe_.len = buffers_.size();
+    sqe_.addr = std::bit_cast<__u64>(buffer_.data());
+    sqe_.len = buffer_.size();
     sqe = sqe_;
   }
 

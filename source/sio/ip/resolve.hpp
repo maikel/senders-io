@@ -20,6 +20,13 @@
 #define _GNU_SOURCE
 #endif
 
+#include "./address.hpp"
+#include "./endpoint.hpp"
+#include "../concepts.hpp"
+#include "../assert.hpp"
+#include "../net_concepts.hpp"
+#include "../sequence/sequence_concepts.hpp"
+
 #include <netdb.h>
 
 #include <csignal>
@@ -29,14 +36,6 @@
 
 #include <exec/sequence_senders.hpp>
 #include <exec/inline_scheduler.hpp>
-
-#include "../concepts.hpp"
-#include "./address.hpp"
-#include "./endpoint.hpp"
-
-#include "../assert.hpp"
-#include "../net_concepts.hpp"
-#include "../sequence/sequence_concepts.hpp"
 
 namespace sio::ip {
   enum class gaierrc {
@@ -235,7 +234,7 @@ namespace sio::async {
       using receiver_concept = stdexec::receiver_t;
       operation<Scheduler, Receiver>* op_{};
 
-      void set_value() noexcept {
+      void set_value() && noexcept {
         SIO_ASSERT(op_->result_iter_ != nullptr);
         op_->result_iter_ = op_->result_iter_->ai_next;
         if (op_->result_iter_) {
@@ -246,13 +245,13 @@ namespace sio::async {
         }
       }
 
-      void set_stopped() noexcept {
+      void set_stopped() && noexcept {
         SIO_ASSERT(op_->request_.ar_result);
         ::freeaddrinfo(op_->request_.ar_result);
         exec::set_value_unless_stopped(static_cast<Receiver&&>(op_->receiver_));
       }
 
-      stdexec::env_of_t<Receiver> get_env() const noexcept {
+      auto get_env() const noexcept -> stdexec::env_of_t<Receiver> {
         return stdexec::get_env(op_->receiver_);
       }
     };

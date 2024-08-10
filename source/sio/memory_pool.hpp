@@ -15,21 +15,17 @@
  */
 #pragma once
 
+#include "./assert.hpp"
+#include "./concepts.hpp"
+#include "./intrusive_list.hpp"
+
 #include <array>
-#include <atomic>
 #include <cstring>
 #include <mutex>
-#include <span>
-#include <system_error>
 #include <variant>
 
 #include <stdexec/__detail/__concepts.hpp>
 #include <stdexec/__detail/__senders_core.hpp>
-
-#include "./assert.hpp"
-#include "./async_allocator.hpp"
-#include "./concepts.hpp"
-#include "./intrusive_list.hpp"
 
 namespace sio {
   class memory_resource {
@@ -199,8 +195,7 @@ namespace sio {
     };
 
     friend void tag_invoke(stdexec::sync_wait_t, deallocate_sender self) noexcept {
-      // auto op = stdexec::connect(self, rcvr{});
-      auto op = stdexec::connect(std::move(self), rcvr{});
+      auto op = stdexec::connect(static_cast<deallocate_sender&&>(self), rcvr{});
       stdexec::start(op);
     }
   };
