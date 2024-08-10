@@ -3,6 +3,7 @@
 #include "../concepts.hpp"
 #include "../async_allocator.hpp"
 #include "./sequence_concepts.hpp"
+#include "stdexec/__detail/__meta.hpp"
 
 #include <exec/env.hpp>
 #include <exec/variant_sender.hpp>
@@ -242,7 +243,7 @@ namespace sio {
         // start async_delete options
         auto alloc = sequence_op_->template get_allocator<item_operation>();
 
-        std::construct_at(&inner_operations_.async_delete_, stdexec::__conv{[&] {
+        std::construct_at(&inner_operations_.async_delete_, stdexec::__emplace_from{[&] {
           return stdexec::connect(
             sio::async::async_delete(alloc, this), final_receiver_t{sequence_op_});
         }});

@@ -21,7 +21,7 @@
 #include "sio/sequence/first.hpp"
 #include "sio/sequence/iterate.hpp"
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 
 TEST_CASE("transform_each - with just sender", "[sequence][transform_each]") {
   auto successor = sio::first(

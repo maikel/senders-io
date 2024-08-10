@@ -19,7 +19,7 @@
 #include "sio/sequence/iterate.hpp"
 #include "sio/sequence/then_each.hpp"
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 
 TEST_CASE("ignore_all - with just sender", "[sequence][ignore_all]") {
   auto ignore = sio::ignore_all(stdexec::just(42));

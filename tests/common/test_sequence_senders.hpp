@@ -1,13 +1,11 @@
 #pragma once
 
 #include <exception>
-#include <iostream>
 #include <stdexec/__detail/__completion_signatures.hpp>
 #include <stdexec/__detail/__execution_fwd.hpp>
 #include <stdexec/__detail/__sender_introspection.hpp>
 #include <stdexec/execution.hpp>
 #include <exec/sequence_senders.hpp>
-#include "sio/concepts.hpp"
 #include "sio/sequence/sequence_concepts.hpp"
 #include <utility>
 
@@ -53,7 +51,7 @@ namespace iterate_1_to_5_ {
       } else
         try {
           ++this->cnt;
-          stdexec::start(op.emplace(stdexec::__conv{[this] {
+          stdexec::start(op.emplace(stdexec::__emplace_from{[this] {
             auto next_sender = exec::set_next(this->rcvr, stdexec::just(cnt));
             return stdexec::connect(std::move(next_sender), next_receiver{this});
           }}));

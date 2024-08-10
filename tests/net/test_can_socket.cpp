@@ -6,7 +6,7 @@
 
 #include <exec/when_any.hpp>
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 
 TEST_CASE("can - Create raw protocol", "[can]") {
   sio::can::raw_protocol protocol{};

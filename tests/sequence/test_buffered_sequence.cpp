@@ -23,7 +23,7 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 #include <exec/linux/io_uring_context.hpp>
 #include <exec/when_any.hpp>
 #include <unistd.h>

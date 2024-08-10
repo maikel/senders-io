@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 #include <exec/sequence/transform_each.hpp>
 #include <exec/sequence/empty_sequence.hpp>
 #include <exec/sequence/ignore_all_values.hpp>

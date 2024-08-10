@@ -50,7 +50,7 @@ namespace sio {
 
     template <class Receiver, class ResultTuple, class ErrorsVariant>
     struct operation_base : __immovable {
-      using mutexes_t = __mapply<__transform<__mconst<std::mutex>, __q<std::tuple>>, ResultTuple>;
+      using mutexes_t = __mapply<__mtransform<__mconst<std::mutex>, __q<std::tuple>>, ResultTuple>;
       using queues_t = __mapply<__q<item_operation_queues>, ResultTuple>;
       using on_stop =
         typename stop_token_of_t<env_of_t<Receiver>>::template callback_type<on_stop_requested>;
@@ -120,7 +120,7 @@ namespace sio {
       template <class Tp>
       using to_item_result = item_operation_result<Tp>*;
 
-      using item_ops = __mapply<__transform<__q<to_item_result>, __q<std::tuple>>, ResultTuple>;
+      using item_ops = __mapply<__mtransform<__q<to_item_result>, __q<std::tuple>>, ResultTuple>;
 
       operation_base<Receiver, ResultTuple, ErrorsVariant>* sequence_op_;
       std::optional<item_ops> item_ops_{};
@@ -270,7 +270,7 @@ namespace sio {
 
           // 5. Start the zipped operation.
           try {
-            auto& op = zipped_op_.emplace(stdexec::__conv{[&] {
+            auto& op = zipped_op_.emplace(stdexec::__emplace_from{[&] {
               return stdexec::connect(
                 exec::set_next(
                   sequence_op->receiver_,
@@ -461,7 +461,7 @@ namespace sio {
 
     template <class Env, class... Senders>
     using result_tuple_t = __mapply<
-      __transform<__mbind_front_q<values_tuple_t, Env>, __q<std::tuple>>,
+      __mtransform<__mbind_front_q<values_tuple_t, Env>, __q<std::tuple>>,
       all_items_t<Env, Senders...>>;
 
     template <class Receiver, class... Senders>
@@ -472,7 +472,7 @@ namespace sio {
       using error_types_items_t = __mapply<
         __mconcat<>,
         __mapply<
-          __transform<__mbind_back_q<
+          __mtransform<__mbind_back_q<
             stdexec::__error_types_of_t,
             env_with_stop_token<env_of_receiver>,
             __q<__types>>>,
@@ -480,7 +480,7 @@ namespace sio {
 
 
       using errors_variant = __minvoke<
-        __mconcat<__transform<__q<decay_t>, __q<__nullable_std_variant>>>,
+        __mconcat<__mtransform<__q<decay_t>, __q<__nullable_std_variant>>>,
         __types<std::exception_ptr>,
         error_types_items_t,
         stdexec::error_types_of_t<Senders, env_with_stop_token<env_of_receiver>, __types>...>;
@@ -526,7 +526,7 @@ namespace sio {
       template <class SenderTuple, std::size_t... Is>
       operation(Receiver rcvr, SenderTuple&& sndr, std::index_sequence<Is...>)
         : base_type{{}, static_cast<Receiver&&>(rcvr)}
-        , op_states_(stdexec::__conv{[&] {
+        , op_states_(stdexec::__emplace_from{[&] {
           return exec::subscribe(
             std::get<Is>(static_cast<SenderTuple&&>(sndr)),
             typename traits<Receiver, Senders...>::template receiver<Is>{this});

@@ -16,7 +16,7 @@
 #include "sio/async_resource.hpp"
 #include "common/test_receiver.hpp"
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 #include <exec/sequence_senders.hpp>
 #include <stdexec/__detail/__transform_completion_signatures.hpp>
 

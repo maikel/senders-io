@@ -18,7 +18,6 @@
 #include <stdexec/__detail/__senders.hpp>
 #include <stdexec/execution.hpp>
 #include <exec/sequence_senders.hpp>
-#include <exec/__detail/__manual_lifetime.hpp>
 
 #include "../concepts.hpp"
 #include "./sequence_concepts.hpp"
@@ -29,7 +28,7 @@ namespace sio {
 
     template <class ResultVariant, bool IsLockStep>
     struct result_type {
-      exec::__manual_lifetime<ResultVariant> result_{};
+      stdexec::__manual_lifetime<ResultVariant> result_{};
       std::mutex mutex_{};
 
       template <class... Args>
@@ -60,7 +59,7 @@ namespace sio {
 
     template <class ResultVariant>
     struct result_type<ResultVariant, true> {
-      exec::__manual_lifetime<ResultVariant> result_{};
+      stdexec::__manual_lifetime<ResultVariant> result_{};
 
       template <class... Args>
       void emplace(Args&&... args) noexcept {

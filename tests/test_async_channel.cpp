@@ -15,7 +15,7 @@
  */
 #include <sio/async_channel.hpp>
 #include <sio/sequence/first.hpp>
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 
 TEST_CASE("async_channel - just", "[async_channel]") {
   using Sigs = stdexec::completion_signatures<stdexec::set_value_t()>;

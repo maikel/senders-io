@@ -57,7 +57,7 @@ namespace sio {
           return;
         }
         try {
-          auto& op = op_.emplace(stdexec::__conv{[&] {
+          auto& op = op_.emplace(stdexec::__emplace_from{[&] {
             return exec::subscribe((const Sender&) this->sndr_, receiver_t{this});
           }});
           stdexec::start(op);

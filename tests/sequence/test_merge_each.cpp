@@ -21,7 +21,7 @@
 #include "sio/sequence/then_each.hpp"
 #include "common/test_receiver.hpp"
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 #include <ranges>
 
 TEST_CASE("merge_each - just", "[sio][merge_each]") {

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 #include <sys/socket.h>
 
 #include <exec/linux/io_uring_context.hpp>
