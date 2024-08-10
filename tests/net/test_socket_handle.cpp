@@ -8,7 +8,7 @@
 #include <exec/single_thread_context.hpp>
 #include <exec/when_any.hpp>
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 #include <stdexec/__detail/__transform_completion_signatures.hpp>
 
 template <stdexec::sender Sender>

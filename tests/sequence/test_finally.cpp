@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 
 #include "sio/sequence/finally.hpp"
 #include "sio/sequence/then_each.hpp"

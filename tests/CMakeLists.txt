@@ -8,7 +8,6 @@ elseif (NOT TARGET sio::sio)
 endif ()
 
 add_executable(test_sio
-  test_main.cpp
   test_const_buffer_subspan.cpp
   sequence/test_first.cpp
   sequence/test_last.cpp
@@ -36,7 +35,7 @@ add_executable(test_sio
   net/test_socket_handle.cpp
 )
 target_include_directories(test_sio PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(test_sio PRIVATE sio::sio Catch2::Catch2)
+target_link_libraries(test_sio PRIVATE sio::sio Catch2::Catch2WithMain)
 
 include(CTest)
 add_test(NAME test_sio COMMAND test_sio)

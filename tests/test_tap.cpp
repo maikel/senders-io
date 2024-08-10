@@ -3,7 +3,7 @@
 #include "sio/sequence/then_each.hpp"
 #include "sio/sequence/ignore_all.hpp"
 
-#include "catch2/catch.hpp"
+#include <catch2/catch_all.hpp>
 
 template <class F>
 auto just_invoke(F f) {

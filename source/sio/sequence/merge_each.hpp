@@ -120,7 +120,7 @@ namespace sio {
 
       operation(Receiver rcvr, Senders&&... sndrs)
         : base_type{sizeof...(Senders), static_cast<Receiver&&>(rcvr)}
-        , ops_{stdexec::__conv{[&] {
+        , ops_{stdexec::__emplace_from{[&] {
           return exec::subscribe(static_cast<Senders&&>(sndrs), receiver_t{this});
         }}...} {
       }

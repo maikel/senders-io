@@ -214,7 +214,7 @@ namespace sio::async {
       void set_value(Token token) && noexcept {
         try {
           Token& t = op_->token_.emplace(static_cast<Token&&>(token));
-          auto& use_op = op_->use_op_.emplace(stdexec::__conv{[&] {
+          auto& use_op = op_->use_op_.emplace(stdexec::__emplace_from{[&] {
             return stdexec::connect(
               exec::finally(
                 exec::set_next(op_->rcvr_, use_sender<Token>{op_->token_}), sio::async::close(t)),

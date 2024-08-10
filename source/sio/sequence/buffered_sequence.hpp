@@ -21,6 +21,7 @@
 #include "../concepts.hpp"
 #include "../sequence/sequence_concepts.hpp"
 #include "sio/mutable_buffer.hpp"
+#include "stdexec/__detail/__meta.hpp"
 
 #include <tuple>
 
@@ -136,7 +137,7 @@ namespace sio {
       }
 
       decltype(auto) connect_next() {
-        return next_op_.emplace(stdexec::__conv{[this] {
+        return next_op_.emplace(stdexec::__emplace_from{[this] {
           next_sender_t next = exec::set_next(receiver_, item_sender_t{this});
           return stdexec::connect(static_cast<next_sender_t&&>(next), next_receiver_t{this});
         }});

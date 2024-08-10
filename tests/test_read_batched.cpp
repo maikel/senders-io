@@ -10,7 +10,7 @@
 
 #include <exec/when_any.hpp>
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 #include <stdexec/__detail/__sync_wait.hpp>
 #include <stdexec/__detail/__transform_completion_signatures.hpp>
 

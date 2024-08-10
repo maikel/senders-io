@@ -18,7 +18,7 @@
 #include <exec/sequence/transform_each.hpp>
 #include <exec/sequence/empty_sequence.hpp>
 #include <exec/sequence/ignore_all_values.hpp>
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 
 #include "common/test_receiver.hpp"
 #include "common/test_sequence_senders.hpp"

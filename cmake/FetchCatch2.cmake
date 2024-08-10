@@ -1,8 +1,10 @@
+Set(FETCHCONTENT_QUIET FALSE)
+
 include(FetchContent)
 FetchContent_Declare(
   Catch2
   GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-  GIT_TAG 8898cc61601af6cdd5b4548dd91ccf70ed67f3c2
+  GIT_TAG v3.6.0
+  GIT_PROGRESS TRUE
 )
 FetchContent_MakeAvailable(Catch2)
-

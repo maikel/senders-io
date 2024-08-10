@@ -7,7 +7,7 @@
 #include <exec/task.hpp>
 #include <exec/when_any.hpp>
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 #include <stdexec/__detail/__execution_fwd.hpp>
 
 template <class Tp>

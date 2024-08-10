@@ -20,7 +20,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 
 #include "sio/ip/address.hpp"
 #include "sio/ip/endpoint.hpp"

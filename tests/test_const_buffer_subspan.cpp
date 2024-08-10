@@ -1,6 +1,6 @@
 #include "sio/const_buffer_span.hpp"
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 
 TEST_CASE("const_buffer_subspan - Constructors") {
   std::uint64_t n0{0};

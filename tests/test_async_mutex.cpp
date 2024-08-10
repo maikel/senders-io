@@ -15,7 +15,7 @@
  */
 #include <sio/async_mutex.hpp>
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 
 TEST_CASE("async_mutex - lock is a sender", "[async_mutex]") {
   sio::async_mutex mutex{};

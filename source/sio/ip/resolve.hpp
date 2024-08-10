@@ -15,6 +15,7 @@
  */
 #pragma once
 
+#include "stdexec/__detail/__meta.hpp"
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
@@ -287,7 +288,7 @@ namespace sio::async {
       }
 
       void start_next() noexcept try {
-        auto& next_op = next_op_.emplace(stdexec::__conv{[&] {
+        auto& next_op = next_op_.emplace(stdexec::__emplace_from{[&] {
           auto res = //
             stdexec::just(
               ip::resolver_result{result_iter_, query_.host_name(), query_.service_name()});

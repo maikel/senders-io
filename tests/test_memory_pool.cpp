@@ -1,7 +1,7 @@
 #include "sio/memory_pool.hpp"
 #include "sio/with_env.hpp"
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 
 TEST_CASE("memory_pool - empty and allocate", "[memory_pool]") {
   sio::memory_pool pool{};

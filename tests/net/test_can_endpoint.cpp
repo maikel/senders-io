@@ -1,6 +1,6 @@
 #include <sio/can/endpoint.hpp>
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 
 TEST_CASE("can - Create endpoint", "[can]") {
   sio::can::endpoint endpoint{1};

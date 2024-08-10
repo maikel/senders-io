@@ -16,7 +16,6 @@
 #pragma once
 
 #include <stdexec/execution.hpp>
-#include <exec/__detail/__manual_lifetime.hpp>
 #include <exec/sequence_senders.hpp>
 
 #include "../concepts.hpp"
@@ -28,7 +27,7 @@ namespace sio {
 
     template <class ResultVariant, bool IsLockStep>
     struct result_type {
-      exec::__manual_lifetime<ResultVariant> result_{};
+      stdexec::__manual_lifetime<ResultVariant> result_{};
       std::atomic<int> emplaced_{0};
 
       template <class... Args>
@@ -63,7 +62,7 @@ namespace sio {
 
     template <class ResultVariant>
     struct result_type<ResultVariant, true> {
-      exec::__manual_lifetime<ResultVariant> result_{};
+      stdexec::__manual_lifetime<ResultVariant> result_{};
 
       template <class... Args>
       void emplace(Args&&... args) noexcept {

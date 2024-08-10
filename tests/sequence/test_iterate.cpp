@@ -18,7 +18,7 @@
 
 #include "sio/sequence/first.hpp"
 
-#include <catch2/catch.hpp>
+#include <catch2/catch_all.hpp>
 
 TEST_CASE("iterate - with just sender", "[sequence][iterate][first]") {
   std::array<int, 1> arr{42};
