@@ -16,7 +16,6 @@
 #pragma once
 
 #include "./file_handle.hpp"
-#include "../net_concepts.hpp"
 
 namespace sio::io_uring {
   template <class Protocol>
