@@ -15,16 +15,9 @@
  */
 #pragma once
 
-#include "./async_allocator.hpp"
-#include "./async_resource.hpp"
-#include "./sequence/sequence_concepts.hpp"
 #include "./concepts.hpp"
-
 #include "./sequence/fork.hpp"
 #include "./sequence/repeat.hpp"
-#include "./sequence/then_each.hpp"
-#include "./sequence/merge_each.hpp"
-#include "./sequence/finally.hpp"
 
 namespace sio {
   template <class IP>

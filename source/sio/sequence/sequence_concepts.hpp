@@ -15,13 +15,10 @@
  */
 #pragma once
 
-#include "../concepts.hpp"
-#include "stdexec/__detail/__execution_fwd.hpp"
-
 #include <exec/env.hpp>
 #include <exec/sequence_senders.hpp>
 #include <stdexec/__detail/__operation_states.hpp>
-#include <utility>
+#include <stdexec/__detail/__execution_fwd.hpp>
 
 namespace exec {
   namespace sequence_queries {

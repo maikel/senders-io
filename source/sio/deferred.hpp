@@ -1,9 +1,7 @@
 #pragma once
 
-#include "./assert.hpp"
 #include "./concepts.hpp"
 
-#include <variant>
 #include <tuple>
 
 namespace sio {

@@ -17,17 +17,14 @@
  */
 #pragma once
 
-#include <tuple>
 #include <utility>
-#include <ranges>
 
 namespace sio {
   template <auto Next>
   struct intrusive_iterator;
 
-  template <class Item, Item* Item::*Next>
-  struct intrusive_iterator<Next>
-  {
+  template <class Item, Item* Item::* Next>
+  struct intrusive_iterator<Next> {
     using difference_type = std::ptrdiff_t;
     Item* item_ = nullptr;
 
@@ -62,7 +59,7 @@ namespace sio {
   template <auto Next, auto Prev>
   class intrusive_list;
 
-  template <class Item, Item* Item::*Next, Item* Item::*Prev>
+  template <class Item, Item* Item::* Next, Item* Item::* Prev>
   class intrusive_list<Next, Prev> {
    public:
     intrusive_list() noexcept = default;

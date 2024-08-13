@@ -15,7 +15,6 @@
  */
 #pragma once
 
-#include "./concepts.hpp"
 #include <exec/env.hpp>
 #include <stdexec/__detail/__receivers.hpp>
 #include <stdexec/__detail/__senders_core.hpp>
