@@ -1,6 +1,6 @@
-#include <stdexec/execution.hpp>
-
 #pragma once
+
+#include <stdexec/execution.hpp>
 
 namespace ex = stdexec;
 using eptr = std::exception_ptr;
