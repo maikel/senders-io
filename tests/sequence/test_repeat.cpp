@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Maikel Nadolski
+ * Copyright (c) 2024 Maikel Nadolski
  * Copyright (c) 2024 Xiaoming Zhang
  *
  * Licensed under the Apache License Version 2.0 with LLVM Exceptions
