@@ -15,15 +15,16 @@
  */
 #pragma once
 
+#include "../concepts.hpp"
+#include "./sequence_concepts.hpp"
+
 #include <functional>
+#include <tuple>
+
 #include <exec/sequence_senders.hpp>
 #include <exec/__detail/__basic_sequence.hpp>
 #include <stdexec/execution.hpp>
 #include <stdexec/functional.hpp>
-#include <tuple>
-
-#include "../concepts.hpp"
-#include "./sequence_concepts.hpp"
 
 namespace sio {
   namespace scan_ {

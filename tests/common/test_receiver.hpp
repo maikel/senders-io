@@ -1,6 +1,5 @@
 #pragma once
 
-#include "sio/concepts.hpp"
 #include <exec/sequence_senders.hpp>
 
 struct any_sequence_receiver {

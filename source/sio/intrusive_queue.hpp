@@ -17,14 +17,13 @@
  */
 #pragma once
 
-#include <tuple>
 #include <utility>
 
 namespace sio {
   template <auto Next>
   class intrusive_queue;
 
-  template <class Item, Item* Item::*Next>
+  template <class Item, Item* Item::* Next>
   class intrusive_queue<Next> {
    public:
     intrusive_queue() noexcept = default;

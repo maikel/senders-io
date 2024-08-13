@@ -15,15 +15,15 @@
  */
 #pragma once
 
+#include "./sequence_concepts.hpp"
+#include "../intrusive_queue.hpp"
+
 #include <optional>
-#include <stdexec/functional.hpp>
 #include <utility>
 
 #include <stdexec/execution.hpp>
+#include <stdexec/functional.hpp>
 #include <exec/__detail/__basic_sequence.hpp>
-
-#include "./sequence_concepts.hpp"
-#include "../intrusive_queue.hpp"
 
 namespace sio {
   namespace zip_ {

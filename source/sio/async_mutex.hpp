@@ -15,9 +15,6 @@
  */
 #pragma once
 
-#include "./concepts.hpp"
-#include "./intrusive_queue.hpp"
-
 #include <exec/__detail/__atomic_intrusive_queue.hpp>
 #include <exec/any_sender_of.hpp>
 
