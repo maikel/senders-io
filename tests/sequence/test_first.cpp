@@ -14,14 +14,15 @@
  * limitations under the License.
  */
 
+#include "sio/sequence/iterate.hpp"
+#include "sio/sequence/first.hpp"
+
+#include <catch2/catch_all.hpp>
+
 #include <stdexec/execution.hpp>
 #include <exec/sequence/transform_each.hpp>
 #include <exec/sequence/empty_sequence.hpp>
 #include <exec/sequence/ignore_all_values.hpp>
-#include <catch2/catch_all.hpp>
-
-#include "sio/sequence/iterate.hpp"
-#include "sio/sequence/first.hpp"
 
 TEST_CASE("first - with just sender", "[sequence][first]") {
   auto first = sio::first(stdexec::just(42));
@@ -57,7 +58,7 @@ TEST_CASE("first - with ranges", "[sequence][first]") {
   REQUIRE(x == 1);
 }
 
-// TODO: need to fix empty_sequence item_types
+// TODO: need to add item_types for empty_sequence
 // TEST_CASE("first - with empty_sequence", "[sequence][first]") {
 //   auto first = sio::first(exec::empty_sequence());
 //   REQUIRE_FALSE(stdexec::sync_wait(std::move(first)));

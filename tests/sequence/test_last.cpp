@@ -13,14 +13,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include <catch2/catch_all.hpp>
-#include <exec/sequence/transform_each.hpp>
-#include <exec/sequence/empty_sequence.hpp>
-#include <exec/sequence/ignore_all_values.hpp>
-
 #include "sio/sequence/last.hpp"
 #include "sio/sequence/iterate.hpp"
 #include "sio/sequence/first.hpp"
+
+#include <catch2/catch_all.hpp>
+
+#include <exec/sequence/transform_each.hpp>
+#include <exec/sequence/empty_sequence.hpp>
+#include <exec/sequence/ignore_all_values.hpp>
 
 TEST_CASE("last - with just sender", "[sequence][last]") {
   auto last = sio::last(stdexec::just(42));
@@ -69,6 +70,7 @@ TEST_CASE("last - with empty ranges", "[sequence][last]") {
   stdexec::sync_wait(f).value();
 }
 
+// TODO: add item_types for empty_sequence
 // TEST_CASE("last - with empty_sequence", "[sequence][last]") {
 // auto last = sio::last(sio::empty_sequence());
 // REQUIRE_FALSE(stdexec::sync_wait(last));

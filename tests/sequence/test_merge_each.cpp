@@ -14,14 +14,15 @@
  * limitations under the License.
  */
 #include "sio/sequence/merge_each.hpp"
-
 #include "sio/sequence/first.hpp"
 #include "sio/sequence/ignore_all.hpp"
 #include "sio/sequence/iterate.hpp"
 #include "sio/sequence/then_each.hpp"
+
 #include "common/test_receiver.hpp"
 
 #include <catch2/catch_all.hpp>
+
 #include <ranges>
 
 TEST_CASE("merge_each - just", "[sio][merge_each]") {

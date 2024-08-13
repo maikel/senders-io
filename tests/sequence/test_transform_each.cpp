@@ -16,7 +16,6 @@
 
 #include "sio/sequence/let_value_each.hpp"
 #include "sio/sequence/transform_each.hpp"
-
 #include "sio/sequence/then_each.hpp"
 #include "sio/sequence/first.hpp"
 #include "sio/sequence/iterate.hpp"

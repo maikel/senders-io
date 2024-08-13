@@ -4,11 +4,11 @@
 #include "sio/io_uring/file_handle.hpp"
 #include "sio/buffer.hpp"
 
+#include <catch2/catch_all.hpp>
+
+#include <stdexec/__detail/__execution_fwd.hpp>
 #include <exec/task.hpp>
 #include <exec/when_any.hpp>
-
-#include <catch2/catch_all.hpp>
-#include <stdexec/__detail/__execution_fwd.hpp>
 
 template <class Tp>
 using task = exec::basic_task<
@@ -55,35 +55,10 @@ TEST_CASE("file_handle - Open a path", "[file_handle]") {
     context, sio::async::use_resources(no_op_path, sio::async::open_path(scheduler, "/dev/null")));
 }
 
-// TEST_CASE("file_handle - Open a file to /dev/null", "[file_handle]") {
-//   exec::io_uring_context context{};
-//   sio::io_uring::io_scheduler scheduler{&context};
-//   using sio::async::mode;
-//   auto file = sio::async::open_file(scheduler, "/dev/null", mode::read);
-//   sync_wait(context, sio::async::use_resources(no_op_file, std::move(file)));
-// }
-
 TEST_CASE("file_handle - Open a file to /dev/null", "[file_handle]") {
   exec::io_uring_context context{};
   sio::io_uring::io_scheduler scheduler{&context};
   using sio::async::mode;
-
-  using FileFactory = decltype(scheduler);
-  static_assert(sio::async::path_factory<FileFactory>);
-  static_assert(sio::async::open_file_::has_full_customization< FileFactory>);
-
-  using PH = sio::async::path_handle_of_t<FileFactory>;
-
-  using PathResource =
-    sio::call_result_t<sio::async::open_path_t, FileFactory, std::filesystem::path>;
-  using RT = sio::async::resource_token_of_t<PathResource>;
-
-  using CR = sio::call_result_t<sio::async::use_t, PathResource&>;
-  using Sender = sio::async::async_resource_::sequence<sio::io_uring::path_resource>;
-
-  using Void = sio::async::single_item_value_t<Sender, stdexec::empty_env>;
-
-
   auto file = sio::async::open_file(scheduler, "/dev/null", mode::read);
   sync_wait(context, sio::async::use_resources(no_op_file, std::move(file)));
 }

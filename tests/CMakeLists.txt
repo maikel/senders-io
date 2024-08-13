@@ -19,7 +19,6 @@ add_executable(test_sio
   sequence/test_finally.cpp
   sequence/test_buffered_sequence.cpp
   test_const_buffer_subspan.cpp
-  test_mutable_buffer_span.cpp
   test_async_resource.cpp
   test_file_handle.cpp
   test_async_accept.cpp

@@ -13,13 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-#include <catch2/catch_all.hpp>
-#include <functional>
-
-#include <exec/sequence_senders.hpp>
-#include <stdexec/execution.hpp>
-
 #include "sio/sequence/first.hpp"
 #include "sio/sequence/fork.hpp"
 #include "sio/sequence/last.hpp"
@@ -28,6 +21,11 @@
 #include "sio/sequence/iterate.hpp"
 #include "sio/sequence/ignore_all.hpp"
 #include "sio/sequence/then_each.hpp"
+
+#include <catch2/catch_all.hpp>
+
+#include <exec/sequence_senders.hpp>
+#include <stdexec/execution.hpp>
 
 TEST_CASE("zip - with just connects with first", "[zip][first]") {
   auto sequence = sio::zip(stdexec::just(42));

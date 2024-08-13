@@ -15,14 +15,15 @@
  * limitations under the License.
  */
 
+#include "sio/sequence/ignore_all.hpp"
+#include "sio/sequence/iterate.hpp"
+#include "sio/sequence/repeat.hpp"
+
 #include <catch2/catch_all.hpp>
 #include <ranges>
 
 #include <exec/sequence_senders.hpp>
 
-#include "sio/sequence/ignore_all.hpp"
-#include "sio/sequence/iterate.hpp"
-#include "sio/sequence/repeat.hpp"
 
 // TODO: stack boom😂
 
