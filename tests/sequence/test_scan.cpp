@@ -13,17 +13,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
-#include <catch2/catch_all.hpp>
-#include <exec/sequence_senders.hpp>
-#include <stdexec/execution.hpp>
-
 #include "sio/sequence/fork.hpp"
 #include "sio/sequence/ignore_all.hpp"
 #include "sio/sequence/scan.hpp"
 #include "sio/sequence/iterate.hpp"
 #include "sio/sequence/first.hpp"
 #include "sio/sequence/last.hpp"
+
+#include <catch2/catch_all.hpp>
+
+#include <exec/sequence_senders.hpp>
+#include <stdexec/execution.hpp>
 
 TEST_CASE("scan - with just sender and ignore_all back binder", "[sequence][scan][ignore_all]") {
   auto f = sio::scan(stdexec::just(41), 1) | sio::ignore_all();

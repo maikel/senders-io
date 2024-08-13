@@ -1,15 +1,16 @@
-#include <catch2/catch_all.hpp>
-#include <exec/sequence/ignore_all_values.hpp>
-#include <exec/sequence_senders.hpp>
-
 #include "sio/sequence/first.hpp"
 #include "sio/sequence/fork.hpp"
 #include "sio/sequence/any_sequence_of.hpp"
 #include "sio/sequence/ignore_all.hpp"
 #include "sio/sequence/iterate.hpp"
 #include "sio/sequence/last.hpp"
-#include "sio/sequence/then_each.hpp"
 #include "sio/sequence/let_value_each.hpp"
+#include "sio/sequence/then_each.hpp"
+
+#include <catch2/catch_all.hpp>
+
+#include <exec/sequence/ignore_all_values.hpp>
+#include <exec/sequence_senders.hpp>
 
 TEST_CASE("fork - with iterate", "[sio][fork]") {
   std::array<int, 3> arr{1, 2, 3};
@@ -38,7 +39,7 @@ TEST_CASE("fork - with then_each and ignore_all", "[sio][fork]") {
   stdexec::sync_wait(std::move(sndr));
 }
 
-// TODO: fix follows
+// FIX: first and last can't stop fork.
 // TEST_CASE("fork - with iterate and first", "[sio][fork]") {
 //   std::array<int, 3> arr{1, 2, 3};
 //   auto sndr = sio::iterate(std::views::all(arr)) //

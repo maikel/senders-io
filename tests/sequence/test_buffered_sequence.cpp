@@ -20,13 +20,14 @@
 #include "sio/sequence/buffered_sequence.hpp"
 #include "sio/sequence/ignore_all.hpp"
 
+#include <catch2/catch_all.hpp>
+
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <unistd.h>
 
-#include <catch2/catch_all.hpp>
 #include <exec/linux/io_uring_context.hpp>
 #include <exec/when_any.hpp>
-#include <unistd.h>
 
 int create_memfd(std::string_view path) {
   int fd = memfd_create(path.data(), 0);
