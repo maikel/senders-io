@@ -14,6 +14,16 @@
  * limitations under the License.
  */
 
+#include "sio/io_uring/socket_handle.hpp"
+#include "sio/ip/address.hpp"
+#include "sio/ip/endpoint.hpp"
+#include "sio/ip/tcp.hpp"
+#include "sio/sequence/ignore_all.hpp"
+#include "sio/sequence/let_value_each.hpp"
+#include "sio/net_concepts.hpp"
+
+#include "common/test_receiver.hpp"
+
 #include <catch2/catch_all.hpp>
 #include <sys/socket.h>
 
@@ -22,15 +32,6 @@
 #include <exec/task.hpp>
 #include <exec/when_any.hpp>
 
-#include "common/test_receiver.hpp"
-
-#include "sio/io_uring/socket_handle.hpp"
-#include "sio/ip/address.hpp"
-#include "sio/ip/endpoint.hpp"
-#include "sio/ip/tcp.hpp"
-#include "sio/sequence/ignore_all.hpp"
-#include "sio/sequence/let_value_each.hpp"
-#include "stdexec/__detail/__env.hpp"
 
 using namespace sio;
 

@@ -123,8 +123,8 @@ namespace exec {
         requires(!sequence_sender<Sequence, empty_env>)
       constexpr auto operator()(const Sequence& seq) const noexcept {
         return make_env(
-          exec::with(cardinality_t{}, std::integral_constant<size_t, 1>{}),
-          exec::with(parallelism_t{}, lock_step));
+          with(cardinality_t{}, std::integral_constant<size_t, 1>{}),
+          with(parallelism_t{}, lock_step));
       }
     };
   }
@@ -173,14 +173,6 @@ namespace exec {
 
   template <valid_item_types ItemTypes>
   using item_sender_t = typename item_::ItemTypes_<ItemTypes>::__t;
-
-  template <class ItemTypes, class Receiver>
-  concept item_sender_to = requires {
-    requires stdexec::sender_to<item_sender_t<ItemTypes>, Receiver>;
-  };
-
-  template <class ItemTypes, class Receiver>
-  using item_connect_result_t = stdexec::connect_result_t<item_sender_t<ItemTypes>, Receiver>;
 
   template <class Sequence, class... Env>
   using item_completion_signatures_of_t = //
