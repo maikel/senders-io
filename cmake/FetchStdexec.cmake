@@ -8,6 +8,6 @@ FetchContent_Declare(
 )
 
 set(STDEXEC_BUILD_EXAMPLES OFF CACHE BOOL "close stdexec examples")
-message(STATUS "Downloading stdexec......")
+message(STATUS "Downloading stdexec")
 FetchContent_MakeAvailable(stdexec)
 
