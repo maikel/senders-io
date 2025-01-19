@@ -41,7 +41,12 @@ namespace sio {
 
       template <class Receiver>
       void visit_result(Receiver&& rcvr) noexcept {
-        std::scoped_lock lock{mutex_};
+        ResultVariant result_on_stack;
+        {
+          std::scoped_lock lock{mutex_};
+          result_on_stack = static_cast<ResultVariant&&>(result_.__get());
+        }
+
         std::visit(
           [&]<class Tuple>(Tuple&& tuple) noexcept {
             if constexpr (__not_decays_to<Tuple, std::monostate>) {
@@ -54,7 +59,7 @@ namespace sio {
               stdexec::set_stopped(static_cast<Receiver&&>(rcvr));
             }
           },
-          static_cast<ResultVariant&&>(result_.__get()));
+          static_cast<ResultVariant&&>(result_on_stack));
       }
     };
 
