@@ -90,7 +90,9 @@ target_sources(sio PUBLIC
 target_link_libraries(sio PUBLIC STDEXEC::stdexec)
 target_compile_features(sio PUBLIC cxx_std_20)
 
-option(BUILD_TESTING "Build tests" ON)
+if(PROJECT_IS_TOP_LEVEL)
+  include(CTest)
+endif()
 if (BUILD_TESTING)
   if(SIO_FETCH_CONTENT)
     include(FetchCatch2)
