@@ -82,6 +82,8 @@ target_sources(sio PUBLIC
     source/sio/intrusive_list.hpp
     source/sio/intrusive_queue.hpp
     source/sio/io_concepts.hpp
+    source/sio/mutable_buffer.hpp
+    source/sio/mutable_buffer_span.hpp
     source/sio/memory_pool.hpp
     source/sio/net_concepts.hpp
     source/sio/read_batched.hpp
