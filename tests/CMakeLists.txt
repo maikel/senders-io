@@ -37,5 +37,7 @@ add_executable(test_sio
 target_include_directories(test_sio PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(test_sio PRIVATE sio::sio Catch2::Catch2WithMain)
 
-include(CTest)
+if(PROJECT_IS_TOP_LEVEL)
+  include(CTest)
+endif()
 add_test(NAME test_sio COMMAND test_sio)
