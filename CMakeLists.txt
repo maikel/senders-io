@@ -100,27 +100,26 @@ if (BUILD_TESTING)
   add_subdirectory(tests)
 endif()
 
-include(GNUInstallDirs)
+if (NOT CMAKE_SKIP_INSTALL_RULES)
+  include(GNUInstallDirs)
 
-install(
-  TARGETS sio
-  EXPORT sio-targets
-  FILE_SET sio_headers DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+  install(
+    TARGETS sio
+    EXPORT sio-targets
+    FILE_SET sio_headers DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
-install(EXPORT sio-targets
-  FILE sio-targets.cmake
-  NAMESPACE sio::
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sio)
+  install(EXPORT sio-targets
+    FILE sio-targets.cmake
+    NAMESPACE sio::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sio)
 
-install(
-  FILES cmake/sio-config.cmake
-  DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/sio")
+  install(
+    FILES cmake/sio-config.cmake
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/sio")
 
-option(SIO_CPACK "Include CPack" ON)
-
-if (PROJECT_IS_TOP_LEVEL AND SIO_CPACK)
   include(CPack)
 endif()
+
 
 if (PROJECT_IS_TOP_LEVEL)
   option(SIO_EXAMPLES "Build examples" ON)
