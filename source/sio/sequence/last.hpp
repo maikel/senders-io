@@ -16,6 +16,7 @@
  */
 #pragma once
 
+#include <stdexec/__detail/__manual_lifetime.hpp>
 #include <stdexec/__detail/__senders.hpp>
 #include <stdexec/execution.hpp>
 #include <exec/sequence_senders.hpp>
