@@ -15,8 +15,17 @@ if (DOXYGEN_FOUND)
 endif()
 set(CMAKE_EXPORT_COMPILE_COMMANDS true)
 
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
-include(FetchStdexec)
+option(SIO_FETCH_CONTENT "Use FetchContent to get dependencies" ON)
+
+if(SIO_FETCH_CONTENT)
+  list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+endif()
+
+if(SIO_FETCH_CONTENT)
+  include(FetchStdexec)
+else()
+  find_package(STDEXEC REQUIRED)
+endif()
 
 add_library(sio
   source/sio/const_buffer_span.cpp
@@ -83,7 +92,11 @@ target_compile_features(sio PUBLIC cxx_std_20)
 
 option(BUILD_TESTING "Build tests" ON)
 if (BUILD_TESTING)
-  include(FetchCatch2)
+  if(SIO_FETCH_CONTENT)
+    include(FetchCatch2)
+  else()
+    find_package(Catch2 REQUIRED)
+  endif()
   add_subdirectory(tests)
 endif()
 
