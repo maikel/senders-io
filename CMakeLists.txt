@@ -74,6 +74,7 @@ target_sources(sio PUBLIC
     source/sio/async_channel.hpp
     source/sio/async_mutex.hpp
     source/sio/async_resource.hpp
+    source/sio/buffer.hpp
     source/sio/buffer_algorithms.hpp
     source/sio/concepts.hpp
     source/sio/const_buffer_span.hpp
