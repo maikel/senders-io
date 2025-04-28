@@ -152,7 +152,7 @@ namespace sio {
         requires stdexec::__has_common_domain<Senders...>
       auto operator()(Senders&&... senders) const
         noexcept((nothrow_decay_copyable<Senders> && ...)) -> stdexec::__well_formed_sender auto {
-        auto domain = stdexec::__domain::__common_domain_t<Senders...>();
+        auto domain = stdexec::__common_domain_t<Senders...>();
         return stdexec::transform_sender(
           domain,
           exec::make_sequence_expr<merge_each_t>(
