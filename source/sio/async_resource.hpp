@@ -114,9 +114,12 @@ namespace sio::async {
   using token_of_t = stdexec::__single_sender_value_t<call_result_t<open_t, Resource&>, Env>;
 
   template <class Sndr, class Env = stdexec::env<>>
-  concept sender_of_void =                              //
-    stdexec::sender_of<Sndr, stdexec::set_value_t()> && //
-    stdexec::__single_value_sender<Sndr, Env>;
+  concept sender_of_void = stdexec::sender_of<Sndr, stdexec::set_value_t()> && requires {
+    typename stdexec::__value_types_t<
+      stdexec::__completion_signatures_of_t<Sndr, Env>,
+      stdexec::__msingle_or<void>,
+      stdexec::__msingle_or<void>>;
+  };
 
   template <class Resource, class Env = stdexec::env<>>
   concept with_open_and_close =
