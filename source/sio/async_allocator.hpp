@@ -157,7 +157,7 @@ namespace sio::async {
       return {static_cast<Receiver&&>(rcvr), pointer_};
     }
 
-    auto get_env() const noexcept -> stdexec::empty_env {
+    auto get_env() const noexcept -> stdexec::env<> {
       return {};
     }
   };

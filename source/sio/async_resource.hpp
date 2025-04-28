@@ -113,12 +113,12 @@ namespace sio::async {
     requires with_open<Resource, Env>
   using token_of_t = stdexec::__single_sender_value_t<call_result_t<open_t, Resource&>, Env>;
 
-  template <class Sndr, class Env = stdexec::empty_env>
+  template <class Sndr, class Env = stdexec::env<>>
   concept sender_of_void =                              //
     stdexec::sender_of<Sndr, stdexec::set_value_t()> && //
     stdexec::__single_value_sender<Sndr, Env>;
 
-  template <class Resource, class Env = stdexec::empty_env>
+  template <class Resource, class Env = stdexec::env<>>
   concept with_open_and_close =
     with_open<Resource, Env> && requires(Resource& resource, token_of_t<Resource, Env>& token) {
       { close(token) } -> sender_of_void;
@@ -336,7 +336,7 @@ namespace sio::async {
     stdexec::__msingle_or<void>,
     stdexec::__q<stdexec::__msingle>>;
 
-  template <resource Resource, class Env = stdexec::empty_env>
+  template <resource Resource, class Env = stdexec::env<>>
   using resource_token_of_t = decay_t<single_item_value_t<call_result_t<use_t, Resource&>, Env>>;
 
   struct use_resources_t {

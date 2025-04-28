@@ -20,7 +20,7 @@ struct any_sequence_receiver {
   void set_error(E&&) && noexcept {
   }
 
-  auto get_env() const noexcept -> stdexec::empty_env {
+  auto get_env() const noexcept -> stdexec::env<> {
     return {};
   }
 };
@@ -53,7 +53,7 @@ struct int_receiver {
   void set_error(E&&) noexcept {
   }
 
-  auto get_env() const noexcept -> stdexec::empty_env {
+  auto get_env() const noexcept -> stdexec::env<> {
     return {};
   }
 };

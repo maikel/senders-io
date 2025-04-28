@@ -28,7 +28,7 @@
 TEST_CASE("merge_each - just", "[sio][merge_each]") {
   auto merge = sio::merge_each(stdexec::just(42));
   using merge_t = decltype(merge);
-  using env = stdexec::empty_env;
+  using env = stdexec::env<>;
   STATIC_REQUIRE(stdexec::sender_in<merge_t, env>);
   STATIC_REQUIRE(exec::sequence_sender_in<merge_t, env>);
   STATIC_REQUIRE(exec::sequence_sender_to<merge_t, any_sequence_receiver>);

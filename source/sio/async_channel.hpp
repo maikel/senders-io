@@ -113,7 +113,7 @@ namespace sio {
       using is_receiver = void;
       subscribe_operation<Completions, Receiver>* op_;
 
-      stdexec::empty_env get_env(stdexec::get_env_t) const noexcept {
+      stdexec::env<> get_env(stdexec::get_env_t) const noexcept {
         return {};
       }
 
@@ -123,7 +123,7 @@ namespace sio {
     struct nop_receiver {
       using is_receiver = void;
 
-      stdexec::empty_env get_env(stdexec::get_env_t) const noexcept {
+      stdexec::env<> get_env(stdexec::get_env_t) const noexcept {
         return {};
       }
 

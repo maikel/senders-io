@@ -89,8 +89,8 @@ TEST_CASE("fork - with then_each and ignore_all", "[sio][fork]") {
 // TODO: empty_sequence doesn't have item types now.
 // TEST_CASE("fork - with empty_sequence") {
 //   auto fork = sio::fork(sio::empty_sequence());
-//   using sigs = stdexec::completion_signatures_of_t<decltype(fork), stdexec::empty_env>;
-//   using items = exec::item_types_of_t<decltype(fork), stdexec::empty_env>;
+//   using sigs = stdexec::completion_signatures_of_t<decltype(fork), stdexec::env<>>;
+//   using items = exec::item_types_of_t<decltype(fork), stdexec::env<>>;
 //   using newSigs = stdexec::__concat_completion_signatures<stdexec::__with_exception_ptr, sigs>;
 //   sio::any_sequence_receiver_ref<newSigs>::any_sender<> seq = fork;
 // }

@@ -24,7 +24,7 @@
 TEST_CASE("ignore_all - with just sender", "[sequence][ignore_all]") {
   auto ignore = sio::ignore_all(stdexec::just(42));
   using ignore_t = decltype(ignore);
-  using completion_sigs = stdexec::completion_signatures_of_t<ignore_t, stdexec::empty_env>;
+  using completion_sigs = stdexec::completion_signatures_of_t<ignore_t, stdexec::env<>>;
   STATIC_REQUIRE(
     stdexec::same_as<completion_sigs, stdexec::completion_signatures<stdexec::set_value_t()>>);
   REQUIRE(stdexec::sync_wait(ignore));
@@ -33,7 +33,7 @@ TEST_CASE("ignore_all - with just sender", "[sequence][ignore_all]") {
 TEST_CASE("ignore_all - with just_stopped sender", "[sequence][ignore_all]") {
   auto ignore = sio::ignore_all(stdexec::just_stopped());
   using ignore_t = decltype(ignore);
-  using completion_sigs = stdexec::completion_signatures_of_t<ignore_t, stdexec::empty_env>;
+  using completion_sigs = stdexec::completion_signatures_of_t<ignore_t, stdexec::env<>>;
   STATIC_REQUIRE(stdexec::same_as<
                  completion_sigs,
                  stdexec::completion_signatures<stdexec::set_value_t(), stdexec::set_stopped_t()>>);
@@ -43,7 +43,7 @@ TEST_CASE("ignore_all - with just_stopped sender", "[sequence][ignore_all]") {
 TEST_CASE("ignore_all - with just_error sender", "[sequence][ignore_all]") {
   auto ignore = sio::ignore_all(stdexec::just_error(42));
   using ignore_t = decltype(ignore);
-  using completion_sigs = stdexec::completion_signatures_of_t<ignore_t, stdexec::empty_env>;
+  using completion_sigs = stdexec::completion_signatures_of_t<ignore_t, stdexec::env<>>;
   STATIC_REQUIRE(
     stdexec::same_as<
       completion_sigs,

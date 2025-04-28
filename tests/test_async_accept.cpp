@@ -47,7 +47,7 @@ TEST_CASE("async_accept concept", "[async_accept]") {
   io_uring::acceptor_handle acceptor{ctx, -1, ip::tcp::v4(), ep};
 
   auto sequence = sio::async::accept(acceptor);
-  STATIC_REQUIRE(exec::sequence_sender<decltype(sequence), stdexec::empty_env>);
+  STATIC_REQUIRE(exec::sequence_sender<decltype(sequence), stdexec::env<>>);
 
   auto op = exec::subscribe(std::move(sequence), any_sequence_receiver{});
   STATIC_REQUIRE(stdexec::operation_state<decltype(op)>);

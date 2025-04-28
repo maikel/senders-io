@@ -33,11 +33,11 @@ struct Resource {
 };
 
 TEST_CASE("async_resource - sequence", "[async_resource]") {
-  STATIC_REQUIRE(sio::async::with_open_and_close<Resource, stdexec::empty_env>);
+  STATIC_REQUIRE(sio::async::with_open_and_close<Resource, stdexec::env<>>);
   Resource res{};
   auto seq = sio::async::use(res);
   using sequence_t = decltype(seq);
-  STATIC_REQUIRE(exec::sequence_sender_in<sequence_t, stdexec::empty_env>);
+  STATIC_REQUIRE(exec::sequence_sender_in<sequence_t, stdexec::env<>>);
   STATIC_REQUIRE(exec::sequence_sender_to<sequence_t, any_sequence_receiver>);
   auto op = exec::subscribe(std::move(seq), any_sequence_receiver{});
   stdexec::start(op);
