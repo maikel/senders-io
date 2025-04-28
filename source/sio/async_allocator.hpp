@@ -217,7 +217,7 @@ namespace sio::async {
     }
 
     auto operator()() const noexcept {
-      return stdexec::read(*this);
+      return stdexec::read_env(*this);
     }
   };
 
