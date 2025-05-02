@@ -558,10 +558,10 @@ namespace sio {
 
     struct zip_t {
       template <stdexec::sender... Senders>
-        requires stdexec::__domain::__has_common_domain<Senders...>
+        requires stdexec::__has_common_domain<Senders...>
       auto operator()(Senders&&... senders) const
         noexcept((nothrow_decay_copyable<Senders> && ...)) -> stdexec::__well_formed_sender auto {
-        auto domain = stdexec::__domain::__common_domain_t<Senders...>();
+        auto domain = stdexec::__common_domain_t<Senders...>();
         return stdexec::transform_sender(
           domain,
           exec::make_sequence_expr<zip_t>(stdexec::__{}, static_cast<Senders&&>(senders)...));

@@ -280,7 +280,7 @@ namespace sio {
     };
 
     struct first_t {
-      template <exec::sequence_sender<stdexec::empty_env> Sender>
+      template <exec::sequence_sender<stdexec::env<>> Sender>
       auto operator()(Sender&& seq) const -> stdexec::__well_formed_sender auto {
         auto domain = stdexec::__get_early_domain(static_cast<Sender&&>(seq));
         return stdexec::transform_sender(

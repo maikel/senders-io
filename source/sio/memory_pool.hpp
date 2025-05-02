@@ -186,7 +186,7 @@ namespace sio {
     struct rcvr {
       using receiver_concept = stdexec::receiver_t;
 
-      auto get_env() const noexcept -> stdexec::empty_env {
+      auto get_env() const noexcept -> stdexec::env<> {
         return {};
       }
 

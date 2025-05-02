@@ -70,10 +70,10 @@ namespace sio { namespace async {
     { handle.path() } -> std::convertible_to<std::filesystem::path>;
   };
 
-  template <class Res, class Env = stdexec::empty_env>
+  template <class Res, class Env = stdexec::env<>>
   concept path_resource = resource<Res> && path_handle<resource_token_of_t<Res, Env>>;
 
-  template <class Sender, class Tp, class Env = stdexec::empty_env>
+  template <class Sender, class Tp, class Env = stdexec::env<>>
   concept single_value_sender =                    //
     stdexec::__single_value_sender<Sender, Env> && //
     std::same_as<Tp, stdexec::__single_sender_value_t<Sender, Env>>;
@@ -412,7 +412,7 @@ namespace sio { namespace async {
   template <class _FileHandle>
   concept file_handle = path_handle<_FileHandle> && seekable_byte_stream<_FileHandle>;
 
-  template <class Res, class Env = stdexec::empty_env>
+  template <class Res, class Env = stdexec::env<>>
   concept file_resource = resource<Res> && file_handle<resource_token_of_t<Res, Env>>;
 
   namespace open_file_ {
